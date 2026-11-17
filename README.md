@@ -12,7 +12,7 @@ Egress policy engine, control plane, and credential broker for AI agents. WhiteK
 docker compose up -d
 ```
 
-*(Pass `--build` to build locally from source instead of pulling `whitekey-ai/whitekey:latest`.)*
+*(Pass `--build` to build locally from source instead of pulling `whitekeyai/whitekey:latest`.)*
 
 - Proxy listens on `127.0.0.1:9999` on the host and `whitekey:9999` inside the isolated `whitekey-sandbox` network.
 - Admin API binds to `127.0.0.1:1111` inside the container; run CLI commands via:
@@ -27,13 +27,13 @@ docker exec -it whitekey whitekey <command>
 
 ```bash
 ./mvnw package -DskipTests
-java --enable-native-access=ALL-UNNAMED -jar whitekey-server/target/whitekey-server-0.0.1-SNAPSHOT.jar
+java --enable-native-access=ALL-UNNAMED -jar whitekey-server/target/whitekey-server-*.jar
 ```
 
 Run the CLI:
 
 ```bash
-java --enable-native-access=ALL-UNNAMED -jar whitekey-cli/target/whitekey-cli-0.0.1-SNAPSHOT.jar <command>
+java --enable-native-access=ALL-UNNAMED -jar whitekey-cli/target/whitekey-cli-*.jar <command>
 ```
 
 Default endpoints and paths:
