@@ -1,6 +1,6 @@
 services:
   whitekey:
-    image: whitekey-ai/whitekey:latest
+    image: whitekeyai/whitekey:latest
     build: .
     container_name: ${WHITEKEY_CONTAINER_NAME:-whitekey}
     restart: unless-stopped
