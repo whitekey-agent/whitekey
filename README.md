@@ -27,13 +27,13 @@ docker exec -it whitekey whitekey <command>
 
 ```bash
 ./mvnw package -DskipTests
-java --enable-native-access=ALL-UNNAMED -jar whitekey-server/target/whitekey-server-0.0.1-SNAPSHOT.jar
+java --enable-native-access=ALL-UNNAMED -jar whitekey-server/target/whitekey-server-*.jar
 ```
 
 Run the CLI:
 
 ```bash
-java --enable-native-access=ALL-UNNAMED -jar whitekey-cli/target/whitekey-cli-0.0.1-SNAPSHOT.jar <command>
+java --enable-native-access=ALL-UNNAMED -jar whitekey-cli/target/whitekey-cli-*.jar <command>
 ```
 
 Default endpoints and paths:

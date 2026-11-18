@@ -1,4 +1,5 @@
 FROM eclipse-temurin:25-jdk AS build
+ARG VERSION=0.0.0-SNAPSHOT
 WORKDIR /src
 
 COPY mvnw pom.xml ./
@@ -13,7 +14,7 @@ COPY whitekey-api/src whitekey-api/src
 COPY whitekey-server/src whitekey-server/src
 COPY whitekey-cli/src whitekey-cli/src
 
-RUN ./mvnw -B package -DskipTests
+RUN ./mvnw -B package -DskipTests -Drevision=${VERSION}
 
 FROM eclipse-temurin:25-jre
 WORKDIR /app
