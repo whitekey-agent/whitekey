@@ -23,12 +23,10 @@ jobs:
       - name: Set release version
         run: |
           chmod +x mvnw
-          VERSION="${GITHUB_REF_NAME#v}"
-          echo "RELEASE_VERSION=${VERSION}" >> "$GITHUB_ENV"
-          ./mvnw -B versions:set -DnewVersion="${VERSION}" -DgenerateBackupPoms=false
+          echo "RELEASE_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
 
       - name: Build and test
-        run: ./mvnw -B package
+        run: ./mvnw -B package -Drevision="${{ env.RELEASE_VERSION }}"
 
       - uses: docker/setup-qemu-action@v3
 
@@ -45,6 +43,8 @@ jobs:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
+          build-args: |
+            VERSION=${{ env.RELEASE_VERSION }}
           tags: |
             whitekeyai/whitekey:${{ env.RELEASE_VERSION }}
             whitekeyai/whitekey:latest
