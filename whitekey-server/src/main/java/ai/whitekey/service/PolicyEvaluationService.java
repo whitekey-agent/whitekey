@@ -48,7 +48,7 @@ public class PolicyEvaluationService {
         PolicyDecisionEngine.HeaderEvaluation headerEval =
                 engine.evaluateHeaders(method, url, headers, applicableRules);
 
-        if (headerEval.needsBody()) {
+        if (headerEval.needsBody() || resolvesToAsk(headerEval.decision())) {
             return new HeaderEvaluationResult(true, null);
         }
 
@@ -69,13 +69,24 @@ public class PolicyEvaluationService {
         return recordDecision(method, url, headers, bodyBytes, decision);
     }
 
+    private boolean resolvesToAsk(Decision decision) {
+        if (decision == null) {
+            return false;
+        }
+        return isSetupApproval(decision) || decision.effect() == RuleEffect.ASK;
+    }
+
+    private boolean isSetupApproval(Decision decision) {
+        return setupService.isSetupMode() && decision.isUnmatchedAction();
+    }
+
     private EvaluationResult recordDecision(
             HttpMethod method,
             URI url,
             HttpHeaders headers,
             byte[] bodyBytes,
             Decision decision) {
-        boolean setup = setupService.isSetupMode() && decision.isUnmatchedAction();
+        boolean setup = isSetupApproval(decision);
         RuleEffect effect = setup ? RuleEffect.ASK : decision.effect();
         String reason = setup ? SETUP_APPROVAL_REASON : decision.reason();
         ActionStatus status = switch (effect) {
