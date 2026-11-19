@@ -14,9 +14,11 @@ import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 
 @Service
@@ -48,13 +50,13 @@ public class PolicyEvaluationService {
         PolicyDecisionEngine.HeaderEvaluation headerEval =
                 engine.evaluateHeaders(method, url, headers, applicableRules);
 
-        if (headerEval.needsBody()) {
+        if (headerEval.needsBody() || resolvesToAsk(headerEval.decision())) {
             return new HeaderEvaluationResult(true, null);
         }
 
         return new HeaderEvaluationResult(
                 false,
-                recordDecision(method, url, headers, null, headerEval.decision()));
+                recordDecision(method, url, headers, null, false, headerEval.decision()));
     }
 
     @Transactional(isolation = Isolation.SERIALIZABLE)
@@ -65,8 +67,21 @@ public class PolicyEvaluationService {
             Path bodyFile) {
         List<HttpRuleEntity> applicableRules = rules.getHttpRules();
         Decision decision = engine.evaluateWithBodyFile(method, url, headers, bodyFile, applicableRules);
-        byte[] bodyBytes = readBodySilently(bodyFile);
-        return recordDecision(method, url, headers, bodyBytes, decision);
+        AuditBody preview = readAuditBody(bodyFile, actions.getMaxStoredBodyBytes());
+        return recordDecision(method, url, headers, preview.bytes(), preview.truncated(), decision);
+    }
+
+    private record AuditBody(byte[] bytes, boolean truncated) {}
+
+    private boolean resolvesToAsk(Decision decision) {
+        if (decision == null) {
+            return false;
+        }
+        return isSetupApproval(decision) || decision.effect() == RuleEffect.ASK;
+    }
+
+    private boolean isSetupApproval(Decision decision) {
+        return setupService.isSetupMode() && decision.isUnmatchedAction();
     }
 
     private EvaluationResult recordDecision(
@@ -74,8 +89,9 @@ public class PolicyEvaluationService {
             URI url,
             HttpHeaders headers,
             byte[] bodyBytes,
+            boolean bodyTruncated,
             Decision decision) {
-        boolean setup = setupService.isSetupMode() && decision.isUnmatchedAction();
+        boolean setup = isSetupApproval(decision);
         RuleEffect effect = setup ? RuleEffect.ASK : decision.effect();
         String reason = setup ? SETUP_APPROVAL_REASON : decision.reason();
         ActionStatus status = switch (effect) {
@@ -83,18 +99,22 @@ public class PolicyEvaluationService {
             case DENY -> ActionStatus.DENIED;
             case ASK -> ActionStatus.AWAITING_APPROVAL;
         };
-        HttpActionEntity action = actions.recordHttp(method, url, headers, bodyBytes, status);
+        HttpActionEntity action = actions.recordHttp(method, url, headers, bodyBytes, bodyTruncated, status);
         return new EvaluationResult(effect, reason, action);
     }
 
-    private static byte[] readBodySilently(Path bodyFile) {
-        if (bodyFile == null || !Files.exists(bodyFile)) {
-            return null;
+    private static AuditBody readAuditBody(Path bodyFile, int maxBytes) {
+        if (bodyFile == null || maxBytes <= 0 || !Files.exists(bodyFile)) {
+            return new AuditBody(null, false);
         }
-        try {
-            return Files.readAllBytes(bodyFile);
+        try (InputStream in = Files.newInputStream(bodyFile)) {
+            byte[] chunk = in.readNBytes(maxBytes + 1);
+            if (chunk.length > maxBytes) {
+                return new AuditBody(Arrays.copyOf(chunk, maxBytes), true);
+            }
+            return new AuditBody(chunk, false);
         } catch (IOException e) {
-            return null;
+            return new AuditBody(null, false);
         }
     }
 }

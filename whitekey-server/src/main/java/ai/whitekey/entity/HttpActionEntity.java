@@ -52,6 +52,9 @@ public class HttpActionEntity extends ActionEntity {
     @Column(name = "body", nullable = false)
     private byte[] body = new byte[0];
 
+    @Column(name = "body_truncated", nullable = false, columnDefinition = "BOOLEAN NOT NULL DEFAULT 0")
+    private boolean bodyTruncated = false;
+
     protected HttpActionEntity() {}
 
     public HttpActionEntity(
@@ -138,6 +141,14 @@ public class HttpActionEntity extends ActionEntity {
 
     public void setBody(byte[] body) {
         this.body = body != null ? body : new byte[0];
+    }
+
+    public boolean isBodyTruncated() {
+        return bodyTruncated;
+    }
+
+    public void setBodyTruncated(boolean bodyTruncated) {
+        this.bodyTruncated = bodyTruncated;
     }
 
     @Override
