@@ -16,6 +16,7 @@ import org.springframework.stereotype.Component;
 import tools.jackson.core.JsonParser;
 import tools.jackson.core.JsonToken;
 import tools.jackson.core.StreamReadFeature;
+import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.io.ByteArrayInputStream;
@@ -38,6 +39,7 @@ public class CelBodyEvaluator {
 
     private static final JsonMapper JSON = JsonMapper.builder()
             .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
+            .disable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
             .build();
     private static final CelParser PARSER = CelParserFactory.standardCelParserBuilder().build();
 
