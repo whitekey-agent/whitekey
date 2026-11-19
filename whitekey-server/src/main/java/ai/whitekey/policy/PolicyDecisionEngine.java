@@ -99,6 +99,9 @@ public final class PolicyDecisionEngine {
     }
 
     public Decision evaluateHttp(HttpActionEntity action, List<HttpRuleEntity> rules) {
+        if (action != null && action.isBodyTruncated()) {
+            return evaluateRules(rules, rule -> matchesActionHeaders(action, rule) && !hasBodyCondition(rule));
+        }
         if (action != null
                 && rules.stream().anyMatch(rule -> matchesActionHeaders(action, rule) && hasBodyCondition(rule))
                 && !bodyEvaluator.isValidJson(action.getBody())) {

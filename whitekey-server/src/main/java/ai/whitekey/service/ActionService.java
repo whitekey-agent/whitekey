@@ -49,6 +49,10 @@ public class ActionService {
         this.maxStoredBodyBytes = (int) maxStoredBodySize.toBytes();
     }
 
+    public int getMaxStoredBodyBytes() {
+        return maxStoredBodyBytes;
+    }
+
     @Transactional
     public HttpActionEntity recordHttp(
             HttpMethod method,
@@ -56,12 +60,25 @@ public class ActionService {
             HttpHeaders headers,
             byte[] body,
             ActionStatus status) {
+        return recordHttp(method, url, headers, body, false, status);
+    }
+
+    @Transactional
+    public HttpActionEntity recordHttp(
+            HttpMethod method,
+            URI url,
+            HttpHeaders headers,
+            byte[] body,
+            boolean bodyTruncated,
+            ActionStatus status) {
         ProxyTarget target = ProxyTarget.fromUri(url);
         Map<String, List<String>> queryParams = HttpPolicyValidator.parseQueryParams(target.rawQuery());
         HttpHeaders safeHeaders = headers != null ? HttpHeaders.readOnlyHttpHeaders(headers) : HttpHeaders.EMPTY;
         byte[] safeBody = body != null ? body : new byte[0];
+        boolean truncated = bodyTruncated;
         if (safeBody.length > maxStoredBodyBytes) {
             safeBody = Arrays.copyOf(safeBody, maxStoredBodyBytes);
+            truncated = true;
         }
 
         HttpActionEntity entity = new HttpActionEntity(
@@ -74,6 +91,7 @@ public class ActionService {
                 safeHeaders,
                 safeBody,
                 status);
+        entity.setBodyTruncated(truncated);
         return httpActionRepository.save(entity);
     }
 
