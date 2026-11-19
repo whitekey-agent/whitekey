@@ -1,6 +1,7 @@
 package ai.whitekey.proxy;
 
 import ai.whitekey.api.dto.RuleEffect;
+import ai.whitekey.config.ProxyProperties;
 import ai.whitekey.entity.ActionEntity;
 import ai.whitekey.entity.ActionStatus;
 import ai.whitekey.policy.HttpPolicyValidator;
@@ -29,7 +30,6 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -39,8 +39,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 import javax.net.ssl.SSLException;
 
@@ -48,8 +46,6 @@ import javax.net.ssl.SSLException;
 public class AgentProxyService {
 
     public static final int HTTP_CLIENT_CLOSED_REQUEST = 499;
-    public static final Duration UPSTREAM_CONNECT_TIMEOUT = Duration.ofSeconds(15);
-    public static final long APPROVAL_POLL_INTERVAL_MS = 2000L;
 
     public static final String ERROR_CLIENT_DISCONNECTED = "client_disconnected";
     public static final String ERROR_INTERRUPTED = "interrupted";
@@ -93,7 +89,8 @@ public class AgentProxyService {
             PolicyEvaluationService evaluationService,
             ActionService actionService,
             ApprovalWaitRegistry waitRegistry,
-            CredentialInjectionService credentialInjectionService) {
+            CredentialInjectionService credentialInjectionService,
+            ProxyProperties proxyProperties) {
         this.validator = validator;
         this.evaluationService = evaluationService;
         this.actionService = actionService;
@@ -102,7 +99,7 @@ public class AgentProxyService {
         this.httpClient =
                 HttpClient.newBuilder()
                         .followRedirects(HttpClient.Redirect.NEVER)
-                        .connectTimeout(UPSTREAM_CONNECT_TIMEOUT)
+                        .connectTimeout(proxyProperties.connectTimeout())
                         .build();
     }
 
@@ -245,10 +242,8 @@ public class AgentProxyService {
             String proxyBaseUrl,
             Path tempBodyFile,
             CompletableFuture<Void> clientDisconnected) {
-        EvaluationResult decision = prep.evaluationResult() != null
-                ? prep.evaluationResult()
-                : evaluationService.evaluateWithBodyFile(
-                        prep.httpMethod(), prep.targetUri(), prep.cleanHeaders(), tempBodyFile);
+        EvaluationResult decision = evaluationService.evaluateWithBodyFile(
+                prep.httpMethod(), prep.targetUri(), prep.cleanHeaders(), tempBodyFile);
 
         if (decision.effect() == RuleEffect.DENY) {
             return ProxyResponse.jsonError(HttpStatus.FORBIDDEN.value(), ERROR_POLICY_DENIED, decision.reason());
@@ -302,26 +297,21 @@ public class AgentProxyService {
             UUID actionId, CompletableFuture<Void> clientDisconnected) {
         CompletableFuture<Void> waiter = waitRegistry.register(actionId);
         try {
-            while (true) {
-                if (clientDisconnected.isDone()) {
-                    expire(actionId, ActionStatus.CANCELLED);
-                    return ProxyResponse.jsonError(
-                            HTTP_CLIENT_CLOSED_REQUEST,
-                            ERROR_CLIENT_DISCONNECTED,
-                            "Client closed connection before approval");
-                }
-
+            if (!clientDisconnected.isDone()) {
                 ActionEntity current = actionService.getAction(actionId);
                 if (current.getStatus() != ActionStatus.AWAITING_APPROVAL) {
                     return resolveOutcome(current);
                 }
-
-                try {
-                    CompletableFuture.anyOf(waiter, clientDisconnected)
-                            .get(APPROVAL_POLL_INTERVAL_MS, TimeUnit.MILLISECONDS);
-                } catch (TimeoutException ignored) {
-                }
+                CompletableFuture.anyOf(waiter, clientDisconnected).get();
             }
+            if (clientDisconnected.isDone()) {
+                expire(actionId, ActionStatus.CANCELLED);
+                return ProxyResponse.jsonError(
+                        HTTP_CLIENT_CLOSED_REQUEST,
+                        ERROR_CLIENT_DISCONNECTED,
+                        "Client closed connection before approval");
+            }
+            return resolveOutcome(actionService.getAction(actionId));
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             expire(actionId, ActionStatus.CANCELLED);

@@ -12,6 +12,7 @@ import ai.whitekey.repository.ActionRepository;
 import ai.whitekey.repository.HttpActionRepository;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.stereotype.Service;
@@ -113,7 +114,10 @@ public class ActionService {
             ActionStatus status,
             String method,
             String host) {
-        var pageable = PageRequests.of(page, limit);
+        if (page < 0 || limit < 1) {
+            throw new IllegalArgumentException("Page must be >= 0 and limit >= 1");
+        }
+        var pageable = PageRequest.of(page, limit);
         String normalizedType = (type == null || type.isBlank()) ? null : type.trim().toLowerCase(Locale.ROOT);
         HttpMethod normalizedMethod = (method == null || method.isBlank()) ? null : HttpMethod.valueOf(method.trim().toUpperCase(Locale.ROOT));
         String normalizedHost = (host == null || host.isBlank()) ? null : host.trim().toLowerCase(Locale.ROOT);

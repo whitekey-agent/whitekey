@@ -43,7 +43,6 @@ public class CelBodyEvaluator {
             .build();
     private static final CelParser PARSER = CelParserFactory.standardCelParserBuilder().build();
 
-    private static final int MAX_CACHE_ENTRIES = 1000;
     private final Map<String, CompiledCelProgram> cache = new ConcurrentHashMap<>();
 
     private record CompiledCelProgram(Cel.Program program, Set<String> variables) {}
@@ -183,9 +182,6 @@ public class CelBodyEvaluator {
     }
 
     private CompiledCelProgram getOrCompile(String expression) {
-        if (cache.size() >= MAX_CACHE_ENTRIES) {
-            cache.clear();
-        }
         return cache.computeIfAbsent(expression, this::compile);
     }
 

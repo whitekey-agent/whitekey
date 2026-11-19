@@ -15,15 +15,14 @@ import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpUtil;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.LastHttpContent;
-import org.springframework.util.unit.DataSize;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.List;
 import java.util.Map;
 
 final class ProxyResponseWriter {
-    private static final int BUFFER_SIZE = (int) DataSize.ofKilobytes(64).toBytes();
 
     private ProxyResponseWriter() {}
 
@@ -56,11 +55,20 @@ final class ProxyResponseWriter {
 
             boolean streamFailed = false;
             try (InputStream in = response.bodyStream()) {
-                byte[] chunk = new byte[BUFFER_SIZE];
-                int read;
-                while (ctx.channel().isOpen() && (read = in.read(chunk)) != -1) {
-                    ctx.writeAndFlush(new DefaultHttpContent(Unpooled.copiedBuffer(chunk, 0, read)));
-                }
+                in.transferTo(new OutputStream() {
+                    @Override
+                    public void write(int b) throws IOException {
+                        write(new byte[]{(byte) b}, 0, 1);
+                    }
+
+                    @Override
+                    public void write(byte[] b, int off, int len) throws IOException {
+                        if (!ctx.channel().isOpen()) {
+                            throw new IOException("Client channel closed");
+                        }
+                        ctx.writeAndFlush(new DefaultHttpContent(Unpooled.copiedBuffer(b, off, len)));
+                    }
+                });
             } catch (Exception ignored) {
                 streamFailed = true;
             }

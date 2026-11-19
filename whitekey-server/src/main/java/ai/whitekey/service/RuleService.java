@@ -25,10 +25,7 @@ import java.util.regex.Pattern;
 
 @Service
 public class RuleService {
-    private static final int MAX_RULE_NAME_LENGTH = 64;
-    private static final int MAX_AUTO_NAME_BASE_LENGTH = 54;
-    private static final Pattern RULE_NAME_PATTERN =
-            Pattern.compile("[a-z0-9_]{1," + MAX_RULE_NAME_LENGTH + "}");
+    private static final Pattern RULE_NAME_PATTERN = Pattern.compile("[a-z0-9_]+");
 
     private final RuleRepository repository;
     private final HttpRuleRepository httpRuleRepository;
@@ -195,9 +192,6 @@ public class RuleService {
         String sanitized = (rawBase == null ? "" : rawBase.toLowerCase(Locale.ROOT))
                 .replaceAll("[^a-z0-9]+", "_")
                 .replaceAll("^_+|_+$", "");
-        if (sanitized.length() > MAX_AUTO_NAME_BASE_LENGTH) {
-            sanitized = sanitized.substring(0, MAX_AUTO_NAME_BASE_LENGTH).replaceAll("_+$", "");
-        }
         if (sanitized.isEmpty()) {
             sanitized = "allow_rule";
         }
@@ -213,8 +207,7 @@ public class RuleService {
         String normalized = normalizeLookupName(rawName);
         if (!RULE_NAME_PATTERN.matcher(normalized).matches()) {
             throw new IllegalArgumentException(
-                    "Rule name must be 1-" + MAX_RULE_NAME_LENGTH
-                            + " characters of lowercase letters, digits, or '_'");
+                    "Rule name must contain only lowercase letters, digits, or '_'");
         }
         return normalized;
     }
