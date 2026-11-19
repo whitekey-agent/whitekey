@@ -17,7 +17,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Locale;
-import java.util.concurrent.atomic.AtomicReference;
 
 @Service
 public class CredentialService {
@@ -31,7 +30,7 @@ public class CredentialService {
     private final HttpCredentialRepository httpCredentialRepository;
     private final EncryptionService encryptionService;
     private final CredentialPresetService presetService;
-    private final AtomicReference<List<HttpCredentialEntity>> credentialCache = new AtomicReference<>();
+    private final TransactionalListCache<HttpCredentialEntity> credentialCache = new TransactionalListCache<>();
 
     public CredentialService(
             CredentialRepository repository,
@@ -110,17 +109,12 @@ public class CredentialService {
     }
 
     public void invalidateCache() {
-        this.credentialCache.set(null);
+        this.credentialCache.invalidateAfterCommit();
     }
 
     @Transactional(readOnly = true)
     public List<HttpCredentialEntity> getActiveHttpCredentials() {
-        List<HttpCredentialEntity> creds = credentialCache.get();
-        if (creds == null) {
-            creds = List.copyOf(httpCredentialRepository.findAll());
-            credentialCache.set(creds);
-        }
-        return creds;
+        return credentialCache.getOrLoad(httpCredentialRepository::findAll);
     }
 
     @Transactional(readOnly = true)
