@@ -5,7 +5,6 @@ import ai.whitekey.api.dto.ResolveActionRequest;
 import ai.whitekey.entity.ActionStatus;
 import ai.whitekey.mapper.ActionDtoMapper;
 import ai.whitekey.service.ActionService;
-import ai.whitekey.service.PageRequests;
 
 import jakarta.validation.Valid;
 
@@ -26,6 +25,9 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/actions")
 public class ActionController {
+    public static final String DEFAULT_PAGE = "0";
+    public static final String DEFAULT_LIMIT = "50";
+
     private final ActionService service;
     private final ActionDtoMapper mapper;
 
@@ -36,8 +38,8 @@ public class ActionController {
 
     @GetMapping
     public List<Action> list(
-            @RequestParam(defaultValue = PageRequests.DEFAULT_PAGE_STRING) int page,
-            @RequestParam(defaultValue = PageRequests.DEFAULT_PAGE_SIZE_STRING) int limit,
+            @RequestParam(defaultValue = DEFAULT_PAGE) int page,
+            @RequestParam(defaultValue = DEFAULT_LIMIT) int limit,
             @RequestParam(required = false) String type,
             @RequestParam(required = false) ActionStatus status,
             @RequestParam(required = false) String method,
