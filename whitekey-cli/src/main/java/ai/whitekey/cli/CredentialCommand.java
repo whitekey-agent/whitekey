@@ -9,6 +9,7 @@ import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
 
 import java.util.List;
+import java.util.Locale;
 
 @Command(name = "credentials", description = "Manage credentials (stored encrypted, injected on egress)",
         subcommands = {
@@ -81,7 +82,7 @@ public class CredentialCommand extends BaseCommand {
         @Option(names = "--host", description = "Target host (e.g. api.github.com, *.slack.com)")
         private String host;
 
-        @Option(names = "--type", defaultValue = "HEADER", description = "Target type: HEADER, QUERY, or COOKIE")
+        @Option(names = "--type", description = "Target type: HEADER, QUERY, or COOKIE (default: HEADER or preset default)")
         private String targetType;
 
         @Option(names = "--key", description = "Header, query, or cookie name")
@@ -96,7 +97,7 @@ public class CredentialCommand extends BaseCommand {
                     name,
                     preset,
                     host,
-                    targetType != null ? targetType.toUpperCase() : null,
+                    targetType != null ? targetType.toUpperCase(Locale.ROOT) : null,
                     key,
                     format,
                     secret);
