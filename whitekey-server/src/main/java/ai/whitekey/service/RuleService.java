@@ -21,7 +21,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
 
 @Service
@@ -34,7 +33,7 @@ public class RuleService {
     private final RuleRepository repository;
     private final HttpRuleRepository httpRuleRepository;
     private final HttpPolicyValidator validator;
-    private final AtomicReference<List<HttpRuleEntity>> ruleCache = new AtomicReference<>();
+    private final TransactionalListCache<HttpRuleEntity> ruleCache = new TransactionalListCache<>();
 
     public RuleService(
             RuleRepository repository,
@@ -134,17 +133,12 @@ public class RuleService {
     }
 
     public void invalidateCache() {
-        this.ruleCache.set(null);
+        this.ruleCache.invalidateAfterCommit();
     }
 
     @Transactional(readOnly = true)
     public List<HttpRuleEntity> getHttpRules() {
-        List<HttpRuleEntity> rules = ruleCache.get();
-        if (rules == null) {
-            rules = List.copyOf(httpRuleRepository.findAll());
-            ruleCache.set(rules);
-        }
-        return rules;
+        return ruleCache.getOrLoad(httpRuleRepository::findAll);
     }
 
     @Transactional
