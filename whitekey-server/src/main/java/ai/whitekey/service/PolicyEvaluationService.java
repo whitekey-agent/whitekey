@@ -84,17 +84,6 @@ public class PolicyEvaluationService {
         return setupService.isSetupMode() && decision.isUnmatchedAction();
     }
 
-    private boolean resolvesToAsk(Decision decision) {
-        if (decision == null) {
-            return false;
-        }
-        return isSetupApproval(decision) || decision.effect() == RuleEffect.ASK;
-    }
-
-    private boolean isSetupApproval(Decision decision) {
-        return setupService.isSetupMode() && decision.isUnmatchedAction();
-    }
-
     private EvaluationResult recordDecision(
             HttpMethod method,
             URI url,

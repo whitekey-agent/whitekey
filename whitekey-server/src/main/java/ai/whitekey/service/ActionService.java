@@ -60,16 +60,6 @@ public class ActionService {
             URI url,
             HttpHeaders headers,
             byte[] body,
-            ActionStatus status) {
-        return recordHttp(method, url, headers, body, false, status);
-    }
-
-    @Transactional
-    public HttpActionEntity recordHttp(
-            HttpMethod method,
-            URI url,
-            HttpHeaders headers,
-            byte[] body,
             boolean bodyTruncated,
             ActionStatus status) {
         ProxyTarget target = ProxyTarget.fromUri(url);
@@ -181,10 +171,9 @@ public class ActionService {
 
     @Transactional
     public void clearFinished() {
-        List<ActionEntity> finished = actionRepository.findByStatusNot(ActionStatus.AWAITING_APPROVAL);
-        if (!finished.isEmpty()) {
-            actionRepository.deleteAll(finished);
-        }
+        String status = ActionStatus.AWAITING_APPROVAL.name();
+        httpActionRepository.deleteByStatusNot(status);
+        actionRepository.deleteByStatusNot(status);
     }
 
     private static ActionStatus parseDecision(String decision) {

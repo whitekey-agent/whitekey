@@ -1,5 +1,6 @@
 package ai.whitekey.service;
 
+import ai.whitekey.api.dto.RuleEffect;
 import ai.whitekey.entity.ActionEntity;
 import ai.whitekey.entity.ActionStatus;
 import ai.whitekey.entity.HttpActionEntity;
@@ -55,10 +56,13 @@ public class SetupService {
         var currentRules = rules.getHttpRules();
         var pending = actionRepository.findByStatusOrderByIdAsc(ActionStatus.AWAITING_APPROVAL, Pageable.unpaged());
         for (ActionEntity action : pending) {
-            if (action instanceof HttpActionEntity http
-                    && engine.evaluateHttp(http, currentRules).isUnmatchedAction()
-                    && actionRepository.resolvePending(http.getId(), ActionStatus.EXPIRED) > 0) {
-                waitRegistry.notifyResolved(http.getId());
+            if (action instanceof HttpActionEntity http) {
+                var decision = engine.evaluateHttp(http, currentRules);
+                if (decision.isUnmatchedAction()
+                        && decision.effect() != RuleEffect.ASK
+                        && actionRepository.resolvePending(http.getId(), ActionStatus.EXPIRED) > 0) {
+                    waitRegistry.notifyResolved(http.getId());
+                }
             }
         }
     }

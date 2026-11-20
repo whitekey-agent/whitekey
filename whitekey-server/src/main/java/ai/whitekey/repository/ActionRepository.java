@@ -22,7 +22,9 @@ public interface ActionRepository extends JpaRepository<ActionEntity, UUID> {
 
     long countByStatus(ActionStatus status);
 
-    List<ActionEntity> findByStatusNot(ActionStatus status);
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = "DELETE FROM action WHERE status <> :status", nativeQuery = true)
+    int deleteByStatusNot(@Param("status") String status);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE ActionEntity a SET a.status = :status WHERE a.id = :id")

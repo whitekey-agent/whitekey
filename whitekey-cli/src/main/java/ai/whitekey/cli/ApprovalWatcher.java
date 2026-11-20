@@ -4,6 +4,7 @@ import ai.whitekey.api.dto.Action;
 import ai.whitekey.api.dto.HttpAction;
 import ai.whitekey.api.dto.RuleEffect;
 import ai.whitekey.cli.client.ApiClient;
+import ai.whitekey.cli.client.CliConfigDefaults;
 import ai.whitekey.cli.client.CliException;
 import org.jline.terminal.Attributes;
 import org.jline.terminal.Terminal;
@@ -14,6 +15,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
+import java.net.HttpURLConnection;
 import java.util.List;
 import java.util.Objects;
 
@@ -61,23 +63,36 @@ final class ApprovalWatcher {
         }
     }
 
+    public static final String DEFAULT_POLL_INTERVAL_MS = "300";
+    public static final String ENV_BODY_PREVIEW_CHARS = "WHITEKEY_BODY_PREVIEW_CHARS";
+
     private static final int ESC_SEQUENCE_TIMEOUT_MS = 30;
-    private static final int MAX_BODY_PREVIEW_CHARS = 160;
+    private static final int DEFAULT_MAX_BODY_PREVIEW_CHARS = 160;
     private static final Choice[] OPTIONS = Choice.values();
 
     private final ApiClient apiClient;
     private final PrintWriter out;
     private final int pollIntervalMs;
+    private final int maxBodyPreviewChars;
+    private boolean ansiEnabled = true;
 
     ApprovalWatcher(ApiClient apiClient, PrintWriter out, int pollIntervalMs) {
         this.apiClient = Objects.requireNonNull(apiClient, "apiClient");
         this.out = Objects.requireNonNull(out, "out");
         this.pollIntervalMs = pollIntervalMs;
+        this.maxBodyPreviewChars = CliConfigDefaults.resolveInt(
+                ENV_BODY_PREVIEW_CHARS, DEFAULT_MAX_BODY_PREVIEW_CHARS);
+    }
+
+    static void watch(ApiClient apiClient, int pollIntervalMs) {
+        new ApprovalWatcher(apiClient, new PrintWriter(System.out, true), pollIntervalMs)
+                .watchInteractive();
     }
 
     void watchInteractive() {
         try (Terminal terminal = TerminalBuilder.builder().system(true).build()) {
             boolean dumb = terminal.getType() != null && terminal.getType().startsWith("dumb");
+            this.ansiEnabled = !dumb;
             if (dumb) {
                 BufferedReader lineReader = new BufferedReader(new InputStreamReader(terminal.input()));
                 watchLoop(new LinePrompt(lineReader));
@@ -127,7 +142,7 @@ final class ApprovalWatcher {
             try {
                 apiClient.resolveApproval(current.id(), choice.decision.name(), choice.saveRule);
             } catch (CliException ex) {
-                if (!isNoLongerPendingError(ex.getMessage())) {
+                if (!isNoLongerPendingError(ex)) {
                     throw ex;
                 }
             }
@@ -142,8 +157,8 @@ final class ApprovalWatcher {
             out.printf("%s%s %s%n", queuePrefix, method, formatHttpTarget(ha));
             if (ha.body() != null && !ha.body().isBlank()) {
                 String compactBody = ha.body().replaceAll("\\s+", " ").trim();
-                if (compactBody.length() > MAX_BODY_PREVIEW_CHARS) {
-                    compactBody = compactBody.substring(0, MAX_BODY_PREVIEW_CHARS) + "...";
+                if (maxBodyPreviewChars > 0 && compactBody.length() > maxBodyPreviewChars) {
+                    compactBody = compactBody.substring(0, maxBodyPreviewChars) + "...";
                 }
                 out.printf("Body: %s%n", compactBody);
                 lines++;
@@ -156,10 +171,11 @@ final class ApprovalWatcher {
     }
 
     private void clearLines(int count) {
-        if (count > 0) {
-            out.print("\u001B[" + count + "A\r\u001B[J");
-            out.flush();
+        if (!ansiEnabled || count <= 0) {
+            return;
         }
+        out.print("\u001B[" + count + "A\r\u001B[J");
+        out.flush();
     }
 
     private static String formatHttpTarget(HttpAction ha) {
@@ -182,13 +198,9 @@ final class ApprovalWatcher {
         }
     }
 
-    private static boolean isNoLongerPendingError(String message) {
-        if (message == null) {
-            return false;
-        }
-        return message.contains("409")
-                || message.contains("404")
-                || message.toLowerCase().contains("no longer awaiting approval");
+    private static boolean isNoLongerPendingError(CliException ex) {
+        return ex.statusCode() == HttpURLConnection.HTTP_CONFLICT
+                || ex.statusCode() == HttpURLConnection.HTTP_NOT_FOUND;
     }
 
     private final class JLinePointerPrompt implements Prompt {
@@ -292,30 +304,24 @@ final class ApprovalWatcher {
             for (int i = 0; i < OPTIONS.length; i++) {
                 out.printf("  %d. %s%n", i + 1, OPTIONS[i].label);
             }
-            int linesPrinted = OPTIONS.length;
             while (true) {
                 out.print("Select [1-" + OPTIONS.length + ", q to quit]: ");
                 out.flush();
                 String line = reader.readLine();
-                linesPrinted++;
                 if (line == null) {
-                    clearLines(linesPrinted);
                     return PromptResult.quitSignal();
                 }
                 String trimmed = line.trim();
                 if ("q".equalsIgnoreCase(trimmed)) {
-                    clearLines(linesPrinted);
                     return PromptResult.quitSignal();
                 }
                 if (trimmed.length() == 1) {
                     int idx = trimmed.charAt(0) - '1';
                     if (idx >= 0 && idx < OPTIONS.length) {
-                        clearLines(linesPrinted);
                         return PromptResult.selected(OPTIONS[idx]);
                     }
                 }
                 out.println("Invalid choice. Enter 1-" + OPTIONS.length + ", or q.");
-                linesPrinted++;
             }
         }
     }
