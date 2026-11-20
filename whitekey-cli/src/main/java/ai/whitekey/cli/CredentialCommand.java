@@ -15,7 +15,7 @@ import java.util.Locale;
         subcommands = {
                 CredentialCommand.ListCommand.class,
                 CredentialCommand.PresetsCommand.class,
-                CredentialCommand.SetCommand.class,
+                CredentialCommand.AddCommand.class,
                 CredentialCommand.RemoveCommand.class
         })
 public class CredentialCommand extends BaseCommand {
@@ -67,8 +67,8 @@ public class CredentialCommand extends BaseCommand {
         }
     }
 
-    @Command(name = "set", description = "Add or update a credential")
-    public static class SetCommand extends BaseCommand {
+    @Command(name = "add", description = "Add or update a credential")
+    public static class AddCommand extends BaseCommand {
 
         @Option(names = "--name", required = true, description = "Credential name (e.g. github-pat)")
         private String name;
