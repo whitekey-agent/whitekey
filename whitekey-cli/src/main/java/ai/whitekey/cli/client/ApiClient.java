@@ -182,14 +182,14 @@ public class ApiClient {
                 return response;
             }
             if (status == HttpURLConnection.HTTP_UNAUTHORIZED) {
-                throw new CliException("Authentication failed (401 Unauthorized). Verify your admin token.");
+                throw new CliException("Authentication failed (401 Unauthorized). Verify your admin token.", status);
             }
             if (status == HttpURLConnection.HTTP_NOT_FOUND) {
-                throw new CliException("Resource not found (404).");
+                throw new CliException("Resource not found (404).", status);
             }
             String body = response.body();
             String errorMsg = body != null && !body.isBlank() ? body : "HTTP " + status;
-            throw new CliException("Server error (" + status + "): " + errorMsg);
+            throw new CliException("Server error (" + status + "): " + errorMsg, status);
         } catch (ConnectException | HttpConnectTimeoutException e) {
             throw new CliException("Unable to connect to WhiteKey server at " + serverUrl);
         } catch (IOException e) {

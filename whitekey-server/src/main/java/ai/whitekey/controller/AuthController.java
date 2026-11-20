@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping({"/api/auth", "/auth"})
+@RequestMapping("/auth")
 public class AuthController {
 
     public static final String ERROR_CODE_UNAUTHORIZED = "unauthorized";
@@ -45,10 +45,5 @@ public class AuthController {
     public AuthStatusResponse status(HttpServletRequest request) {
         String token = AdminTokenService.extractBearerToken(request.getHeader(HttpHeaders.AUTHORIZATION));
         return new AuthStatusResponse(adminTokenService.isValidToken(token));
-    }
-
-    @PostMapping("/logout")
-    public AuthStatusResponse logout() {
-        return new AuthStatusResponse(false);
     }
 }

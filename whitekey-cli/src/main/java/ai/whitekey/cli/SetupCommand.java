@@ -3,8 +3,6 @@ package ai.whitekey.cli;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
-import java.io.PrintWriter;
-
 @Command(name = "setup", description = "Manage setup mode for discovering and approving new rules",
         subcommands = {
                 SetupCommand.StatusCommand.class,
@@ -29,7 +27,7 @@ public class SetupCommand extends BaseCommand {
         @Option(names = {"--watch"}, description = "Watch incoming actions interactively and turn setup mode OFF on exit")
         private boolean watch;
 
-        @Option(names = {"--interval"}, defaultValue = "300", description = "Poll interval in milliseconds when watching (default: 300)")
+        @Option(names = {"--interval"}, defaultValue = ApprovalWatcher.DEFAULT_POLL_INTERVAL_MS, description = "Poll interval in milliseconds when watching (default: ${DEFAULT-VALUE})")
         private int pollIntervalMs;
 
         @Override
@@ -38,8 +36,7 @@ public class SetupCommand extends BaseCommand {
             System.out.println("Setup Mode: ON");
             if (watch) {
                 try {
-                    new ApprovalWatcher(getApiClient(), new PrintWriter(System.out, true), pollIntervalMs)
-                            .watchInteractive();
+                    ApprovalWatcher.watch(getApiClient(), pollIntervalMs);
                 } finally {
                     getApiClient().turnSetupOff();
                     System.out.println("Setup Mode: OFF");

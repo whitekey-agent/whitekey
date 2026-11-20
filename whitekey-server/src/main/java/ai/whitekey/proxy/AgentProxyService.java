@@ -109,10 +109,6 @@ public class AgentProxyService {
             byte[] body,
             InputStream bodyStream) {
 
-        public static ProxyResponse ofBytes(int status, Map<String, List<String>> headers, byte[] body) {
-            return new ProxyResponse(status, headers, body == null ? new byte[0] : body, null);
-        }
-
         public static ProxyResponse ofStream(int status, Map<String, List<String>> headers, InputStream stream) {
             return new ProxyResponse(status, headers, null, stream);
         }
@@ -201,13 +197,12 @@ public class AgentProxyService {
         HttpHeaders cleanHeaders;
         try {
             target = ProxyTarget.parse(rawRequestPath, rawQuery);
-            validator.method(method);
+            httpMethod = validator.method(method);
             validator.host(target.host());
             validator.path(target.path());
             validator.query(rawQuery);
             targetUri = target.toUri(rawQuery);
             cleanHeaders = sanitizeRequestHeaders(requestHeaders);
-            httpMethod = HttpMethod.valueOf(method.toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException error) {
             return invalidRequest(error);
         }

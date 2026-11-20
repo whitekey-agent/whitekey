@@ -53,7 +53,12 @@ public final class CliConfigDefaults {
         String userHome = System.getProperty("user.home");
         if (userHome != null) {
             candidates.add(Path.of(userHome, ".config/whitekey/.env"));
-            candidates.add(Path.of(userHome, ".local/share/whitekey/whitekey.env"));
+        }
+        String dataDir = firstNonBlank(System.getenv(ENV_DATA_DIR));
+        if (dataDir != null) {
+            candidates.add(Path.of(dataDir, "whitekey.env"));
+        } else if (userHome != null) {
+            candidates.add(Path.of(userHome, DEFAULT_DATA_SUBDIR, "whitekey.env"));
         }
         return candidates.stream()
                 .map(Path::toFile)
@@ -88,5 +93,17 @@ public final class CliConfigDefaults {
             }
         }
         return null;
+    }
+
+    public static int resolveInt(String envVar, int fallback) {
+        String raw = System.getenv(envVar);
+        if (raw == null || raw.isBlank()) {
+            return fallback;
+        }
+        try {
+            return Integer.parseInt(raw.trim());
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
     }
 }

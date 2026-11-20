@@ -5,6 +5,7 @@ import ai.whitekey.entity.HttpActionEntity;
 
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.http.HttpMethod;
@@ -25,4 +26,10 @@ public interface HttpActionRepository extends JpaRepository<HttpActionEntity, UU
             @Param("method") HttpMethod method,
             @Param("host") String host,
             Pageable pageable);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(
+            value = "DELETE FROM http_action WHERE id IN (SELECT id FROM action WHERE status <> :status)",
+            nativeQuery = true)
+    int deleteByStatusNot(@Param("status") String status);
 }

@@ -23,16 +23,4 @@ public record CreateHttpRuleRequest(
             type = ProtocolConstants.HTTP;
         }
     }
-
-    public CreateHttpRuleRequest(
-            String name,
-            String type,
-            String effect,
-            List<String> methods,
-            List<String> hosts,
-            List<Integer> ports,
-            List<String> paths,
-            String bodyCondition) {
-        this(name, type, effect, methods, hosts, ports, paths, null, null, bodyCondition);
-    }
 }

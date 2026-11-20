@@ -7,7 +7,6 @@ import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
 
-import java.io.PrintWriter;
 import java.util.List;
 
 @Command(name = "approvals", description = "Manage pending action approvals",
@@ -30,13 +29,12 @@ public class ApprovalCommand extends BaseCommand {
     @Command(name = "watch", description = "Watch incoming actions one by one and approve/reject interactively")
     public static class WatchCommand extends BaseCommand {
 
-        @Option(names = {"--interval"}, defaultValue = "300", description = "Poll interval in milliseconds (default: 300)")
+        @Option(names = {"--interval"}, defaultValue = ApprovalWatcher.DEFAULT_POLL_INTERVAL_MS, description = "Poll interval in milliseconds (default: ${DEFAULT-VALUE})")
         private int pollIntervalMs;
 
         @Override
         public void run() {
-            new ApprovalWatcher(getApiClient(), new PrintWriter(System.out, true), pollIntervalMs)
-                    .watchInteractive();
+            ApprovalWatcher.watch(getApiClient(), pollIntervalMs);
         }
     }
 
