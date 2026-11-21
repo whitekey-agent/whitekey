@@ -94,6 +94,21 @@ public class ProxyCertificateAuthority {
             boolean certExists = Files.exists(caCertPath) && Files.size(caCertPath) > 0;
             boolean keyExists = Files.exists(caKeyPath) && Files.size(caKeyPath) > 0;
 
+            if (!certExists && keyExists && caCertPath.getFileName() != null) {
+                Path legacyCertPath = caKeyPath.resolveSibling(caCertPath.getFileName());
+                if (!legacyCertPath.equals(caCertPath)
+                        && Files.exists(legacyCertPath)
+                        && Files.size(legacyCertPath) > 0) {
+                    if (caCertPath.getParent() != null) {
+                        Files.createDirectories(caCertPath.getParent());
+                    }
+                    Files.move(legacyCertPath, caCertPath);
+                    setPosixPermissions(caCertPath, "rw-r--r--");
+                    certExists = true;
+                    log.info("Migrated WhiteKey Proxy Root CA certificate from {} to {}", legacyCertPath, caCertPath);
+                }
+            }
+
             if (certExists != keyExists) {
                 throw new IllegalStateException(
                         "Both proxy CA certificate (" + caCertPath + ") and private key ("
@@ -265,6 +280,10 @@ public class ProxyCertificateAuthority {
             Files.createDirectories(path.getParent());
         }
         Files.writeString(path, content, StandardCharsets.UTF_8);
+        setPosixPermissions(path, posixPerms);
+    }
+
+    private static void setPosixPermissions(Path path, String posixPerms) {
         if (FileSystems.getDefault().supportedFileAttributeViews().contains(POSIX_VIEW)) {
             try {
                 Files.setPosixFilePermissions(path, PosixFilePermissions.fromString(posixPerms));

@@ -27,7 +27,7 @@ public record ProxyProperties(
         maxInitialLineLength = maxInitialLineLength != null ? maxInitialLineLength : DataSize.ofKilobytes(8);
         maxHeaderSize = maxHeaderSize != null ? maxHeaderSize : DataSize.ofKilobytes(32);
         maxChunkSize = maxChunkSize != null ? maxChunkSize : DataSize.ofKilobytes(16);
-        caCertFile = (caCertFile != null && !caCertFile.isBlank()) ? caCertFile.trim() : "whitekey_ca.crt";
+        caCertFile = (caCertFile != null && !caCertFile.isBlank()) ? caCertFile.trim() : "certs/whitekey_ca.crt";
         caKeyFile = (caKeyFile != null && !caKeyFile.isBlank()) ? caKeyFile.trim() : "whitekey_ca.key";
         tlsPassthroughHosts = tlsPassthroughHosts == null
                 ? List.of()

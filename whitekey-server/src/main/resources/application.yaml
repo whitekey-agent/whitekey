@@ -42,7 +42,7 @@ app:
     max-initial-line-length: ${PROXY_MAX_INITIAL_LINE_LENGTH:8KB}
     max-header-size: ${PROXY_MAX_HEADER_SIZE:32KB}
     max-chunk-size: ${PROXY_MAX_CHUNK_SIZE:16KB}
-    ca-cert-file: ${PROXY_CA_CERT_FILE:whitekey_ca.crt}
+    ca-cert-file: ${PROXY_CA_CERT_FILE:certs/whitekey_ca.crt}
     ca-key-file: ${PROXY_CA_KEY_FILE:whitekey_ca.key}
     tls-passthrough-hosts: ${PROXY_TLS_PASSTHROUGH_HOSTS:}
   policy:
