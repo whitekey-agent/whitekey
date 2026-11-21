@@ -2,7 +2,7 @@ package ai.whitekey.service;
 
 import ai.whitekey.api.dto.RuleEffect;
 import ai.whitekey.entity.HttpActionEntity;
-import ai.whitekey.exception.ApprovalConflictException;
+import ai.whitekey.exception.ConflictException;
 import ai.whitekey.policy.PolicyDecisionEngine;
 import ai.whitekey.proxy.ProxyTarget;
 import org.springframework.http.HttpMethod;
@@ -35,12 +35,12 @@ public class HttpApprovalHandler implements ProtocolApprovalHandler<HttpActionEn
         if (current.isUnmatchedAction()
                 && current.effect() != RuleEffect.ASK
                 && !setupService.isSetupMode()) {
-            throw new ApprovalConflictException("Setup mode has ended");
+            throw new ConflictException("Setup mode has ended");
         }
         if (saveRule
                 && current.effect() == RuleEffect.DENY
                 && !current.isUnmatchedAction()) {
-            throw new ApprovalConflictException(PolicyDecisionEngine.RULE_DENIED_REASON);
+            throw new ConflictException(PolicyDecisionEngine.RULE_DENIED_REASON);
         }
     }
 

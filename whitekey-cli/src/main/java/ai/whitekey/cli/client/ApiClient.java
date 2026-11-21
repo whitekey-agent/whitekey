@@ -10,7 +10,6 @@ import ai.whitekey.api.dto.Rule;
 import ai.whitekey.api.dto.Status;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 import java.io.IOException;
 import java.net.ConnectException;
@@ -25,6 +24,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 
 public class ApiClient {
 
@@ -59,7 +59,7 @@ public class ApiClient {
         this.requestTimeout = CliConfigDefaults.resolveDuration(
                 CliConfigDefaults.ENV_REQUEST_TIMEOUT, DEFAULT_REQUEST_TIMEOUT);
         this.httpClient = HttpClient.newBuilder().connectTimeout(connectTimeout).build();
-        this.objectMapper = new ObjectMapper().registerModule(new JavaTimeModule()).configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        this.objectMapper = new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     }
 
     public Status getStatus() {
@@ -118,14 +118,14 @@ public class ApiClient {
     }
 
     public void resolveApproval(String actionId, String decision, boolean saveRule) {
-        post(PATH_ACTIONS + "/" + actionId + "/resolve", new ResolveActionRequest(decision, saveRule), Void.class);
+        post(PATH_ACTIONS + "/" + encodePathSegment(actionId) + "/resolve", new ResolveActionRequest(decision, saveRule), Void.class);
     }
 
     public List<Action> getHistory(int limit, String status, String method, String host) {
         int validLimit = Math.max(1, limit);
         StringBuilder path = new StringBuilder(PATH_ACTIONS + "?page=0&limit=").append(validLimit);
-        appendQueryParam(path, "status", status != null ? status.toUpperCase() : null);
-        appendQueryParam(path, "method", method != null ? method.toUpperCase() : null);
+        appendQueryParam(path, "status", status != null ? status.toUpperCase(Locale.ROOT) : null);
+        appendQueryParam(path, "method", method != null ? method.toUpperCase(Locale.ROOT) : null);
         appendQueryParam(path, "host", host);
         return getList(path.toString(), Action[].class);
     }

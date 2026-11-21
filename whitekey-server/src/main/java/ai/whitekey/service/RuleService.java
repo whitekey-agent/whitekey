@@ -119,6 +119,11 @@ public class RuleService {
     }
 
     @Transactional(readOnly = true)
+    public int countRules() {
+        return (int) repository.count();
+    }
+
+    @Transactional(readOnly = true)
     public List<RuleEntity> getRules(String type) {
         if (type == null || type.isBlank()) {
             return getRules();

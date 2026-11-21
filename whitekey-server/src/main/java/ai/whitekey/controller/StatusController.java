@@ -29,7 +29,7 @@ public class StatusController {
     public Status getStatus() {
         boolean running = proxyServer.isRunning();
         int port = proxyServer.getBoundPort();
-        int rulesCount = ruleService.getRules().size();
+        int rulesCount = ruleService.countRules();
         int pendingApprovals = actionService.countPendingApprovals();
         return new Status(running, port, rulesCount, pendingApprovals);
     }
