@@ -16,7 +16,6 @@ import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.http.DefaultFullHttpResponse;
-import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpObject;
 import io.netty.handler.codec.http.HttpRequest;
@@ -26,6 +25,7 @@ import io.netty.handler.codec.http.HttpServerExpectContinueHandler;
 import io.netty.handler.codec.http.HttpUtil;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.LastHttpContent;
+import io.netty.handler.ssl.SslContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -46,6 +46,7 @@ import java.util.concurrent.ExecutorService;
 class ProxyInboundHandler extends SimpleChannelInboundHandler<HttpObject> {
 
     private static final Logger log = LoggerFactory.getLogger(ProxyInboundHandler.class);
+    private static final String SSL_HANDLER = "tls-mitm";
 
     public static final String ERROR_MALFORMED_REQUEST = "Malformed HTTP request";
     public static final String ERROR_PIPELINING_UNSUPPORTED = "pipelining_unsupported";
@@ -62,18 +63,19 @@ class ProxyInboundHandler extends SimpleChannelInboundHandler<HttpObject> {
         DISCARDING,
         STREAMING,
         SPOOLING,
-        TUNNELING
+        TUNNELING,
+        UPGRADING_TLS
     }
 
     private final AgentProxyService proxyService;
+    private final ProxyCertificateAuthority certificateAuthority;
     private final ExecutorService virtualExecutor;
     private final ProxyProperties properties;
-    private final int boundPort;
 
     private State state = State.IDLE;
     private String currentMethod;
     private boolean keepAlive = false;
-    private String proxyBaseUrl;
+    private ProxyTarget tunnelTarget;
     private AgentProxyService.PreparedRequest preparedRequest;
 
     private PipedOutputStream pipedOut;
@@ -86,13 +88,13 @@ class ProxyInboundHandler extends SimpleChannelInboundHandler<HttpObject> {
 
     ProxyInboundHandler(
             AgentProxyService proxyService,
+            ProxyCertificateAuthority certificateAuthority,
             ExecutorService virtualExecutor,
-            ProxyProperties properties,
-            int boundPort) {
+            ProxyProperties properties) {
         this.proxyService = proxyService;
+        this.certificateAuthority = certificateAuthority;
         this.virtualExecutor = virtualExecutor;
         this.properties = properties;
-        this.boundPort = boundPort;
     }
 
     @Override
@@ -125,7 +127,6 @@ class ProxyInboundHandler extends SimpleChannelInboundHandler<HttpObject> {
         String rawQuery = queryIdx >= 0 ? withoutFragment.substring(queryIdx + 1) : null;
 
         HttpHeaders requestHeaders = copyRequestHeaders(req);
-        proxyBaseUrl = resolveProxyBaseUrl(req);
 
         clientDisconnected = new CompletableFuture<>();
         closeListener = future -> clientDisconnected.complete(null);
@@ -136,7 +137,9 @@ class ProxyInboundHandler extends SimpleChannelInboundHandler<HttpObject> {
             return;
         }
 
-        preparedRequest = proxyService.prepare(currentMethod, rawPath, rawQuery, requestHeaders);
+        preparedRequest = tunnelTarget != null
+                ? proxyService.prepareTunnelRequest(tunnelTarget, currentMethod, rawPath, rawQuery, requestHeaders)
+                : proxyService.prepareForward(currentMethod, rawPath, rawQuery, requestHeaders);
         if (preparedRequest.immediateError() != null) {
             failAndDiscard(ctx, currentMethod, preparedRequest.immediateError());
             return;
@@ -166,7 +169,6 @@ class ProxyInboundHandler extends SimpleChannelInboundHandler<HttpObject> {
             state = State.STREAMING;
 
             AgentProxyService.PreparedRequest prep = preparedRequest;
-            String baseUrl = proxyBaseUrl;
             String method = currentMethod;
             boolean keepConn = keepAlive;
             CompletableFuture<Void> disconnected = clientDisconnected;
@@ -175,7 +177,7 @@ class ProxyInboundHandler extends SimpleChannelInboundHandler<HttpObject> {
                     ctx,
                     method,
                     keepConn,
-                    () -> proxyService.handleStream(prep, baseUrl, pis, disconnected),
+                    () -> proxyService.handleStream(prep, pis, disconnected),
                     null);
         } catch (IOException e) {
             failAndDiscard(ctx, currentMethod, HttpStatus.INTERNAL_SERVER_ERROR, "stream_init_error", "Failed initializing pipe");
@@ -183,6 +185,77 @@ class ProxyInboundHandler extends SimpleChannelInboundHandler<HttpObject> {
     }
 
     private void handleConnectRequest(
+            ChannelHandlerContext ctx, String rawUri, HttpHeaders requestHeaders) {
+        if (tunnelTarget != null) {
+            failAndDiscard(ctx, currentMethod, HttpStatus.BAD_REQUEST, AgentProxyService.ERROR_INVALID_REQUEST, "Nested CONNECT is not supported");
+            return;
+        }
+        ProxyTarget target;
+        try {
+            target = proxyService.parseConnectTarget(rawUri);
+        } catch (IllegalArgumentException error) {
+            failAndDiscard(ctx, currentMethod, HttpStatus.BAD_REQUEST, AgentProxyService.ERROR_INVALID_REQUEST, error.getMessage());
+            return;
+        }
+        if (properties.isTlsPassthroughHost(target.host())) {
+            handlePassthroughConnect(ctx, rawUri, requestHeaders);
+            return;
+        }
+        startTlsMitm(ctx, target);
+    }
+
+    private void startTlsMitm(ChannelHandlerContext ctx, ProxyTarget target) {
+        state = State.UPGRADING_TLS;
+        ctx.channel().config().setAutoRead(false);
+        String method = currentMethod;
+        virtualExecutor.execute(() -> {
+            SslContext sslContext;
+            try {
+                sslContext = certificateAuthority.sslContextForHost(target.host());
+            } catch (Exception unexpected) {
+                log.error("Failed preparing TLS context for CONNECT target {}", target.host(), unexpected);
+                sendResponseFromVirtualThread(
+                        ctx,
+                        method,
+                        ProxyResponse.jsonError(HttpStatus.INTERNAL_SERVER_ERROR.value(), ERROR_INTERNAL, MSG_INTERNAL_ERROR),
+                        false);
+                return;
+            }
+            ctx.executor().execute(() -> finishTlsUpgrade(ctx, target, sslContext));
+        });
+    }
+
+    private void finishTlsUpgrade(ChannelHandlerContext ctx, ProxyTarget target, SslContext sslContext) {
+        if (!ctx.channel().isActive()) {
+            cleanup(ctx);
+            return;
+        }
+        DefaultFullHttpResponse established =
+                new DefaultFullHttpResponse(
+                        HttpVersion.HTTP_1_1,
+                        new HttpResponseStatus(200, "Connection Established"));
+        ctx.writeAndFlush(established).addListener((ChannelFuture writeFuture) -> {
+            if (!writeFuture.isSuccess() || !ctx.channel().isActive()) {
+                cleanup(ctx);
+                ctx.close();
+                return;
+            }
+            ChannelPipeline pipeline = ctx.pipeline();
+            pipeline.addFirst(SSL_HANDLER, sslContext.newHandler(ctx.alloc()));
+            pipeline.replace(
+                    AgentProxyServer.CODEC_HANDLER,
+                    AgentProxyServer.CODEC_HANDLER,
+                    new HttpServerCodec(
+                            (int) properties.maxInitialLineLength().toBytes(),
+                            (int) properties.maxHeaderSize().toBytes(),
+                            (int) properties.maxChunkSize().toBytes()));
+            tunnelTarget = target;
+            cleanup(ctx);
+            ctx.channel().config().setAutoRead(true);
+        });
+    }
+
+    private void handlePassthroughConnect(
             ChannelHandlerContext ctx, String rawUri, HttpHeaders requestHeaders) {
         preparedRequest = proxyService.prepareConnect(rawUri, requestHeaders);
         if (preparedRequest.immediateError() != null) {
@@ -283,7 +356,7 @@ class ProxyInboundHandler extends SimpleChannelInboundHandler<HttpObject> {
 
     private void handleHttpContent(
             ChannelHandlerContext ctx, io.netty.handler.codec.http.HttpContent content) {
-        if (state == State.DISCARDING || state == State.TUNNELING) {
+        if (state == State.DISCARDING || state == State.TUNNELING || state == State.UPGRADING_TLS) {
             return;
         }
 
@@ -308,7 +381,6 @@ class ProxyInboundHandler extends SimpleChannelInboundHandler<HttpObject> {
                 Path file = tempFile;
                 tempFile = null;
                 AgentProxyService.PreparedRequest prep = preparedRequest;
-                String baseUrl = proxyBaseUrl;
                 String method = currentMethod;
                 boolean keepConn = keepAlive;
                 CompletableFuture<Void> disconnected = clientDisconnected;
@@ -317,7 +389,7 @@ class ProxyInboundHandler extends SimpleChannelInboundHandler<HttpObject> {
                         ctx,
                         method,
                         keepConn,
-                        () -> proxyService.handleWithBodyFile(prep, baseUrl, file, disconnected),
+                        () -> proxyService.handleWithBodyFile(prep, file, disconnected),
                         () -> deleteQuietly(file));
             }
         } else if (state == State.STREAMING) {
@@ -382,13 +454,6 @@ class ProxyInboundHandler extends SimpleChannelInboundHandler<HttpObject> {
         return headers;
     }
 
-    private String resolveProxyBaseUrl(HttpRequest req) {
-        String hostHeader = req.headers().get(HttpHeaderNames.HOST);
-        return (hostHeader != null && !hostHeader.isBlank())
-                ? "http://" + hostHeader
-                : "http://" + properties.address() + ":" + boundPort;
-    }
-
     private static void removeHandler(ChannelPipeline pipeline, Class<? extends ChannelHandler> type) {
         if (pipeline.get(type) != null) {
             pipeline.remove(type);
@@ -435,6 +500,7 @@ class ProxyInboundHandler extends SimpleChannelInboundHandler<HttpObject> {
 
     @Override
     public void channelInactive(ChannelHandlerContext ctx) {
+        tunnelTarget = null;
         cleanup(ctx);
         ctx.fireChannelInactive();
     }
@@ -442,6 +508,7 @@ class ProxyInboundHandler extends SimpleChannelInboundHandler<HttpObject> {
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         log.debug("Agent client connection closed with error: {}", cause.getMessage());
+        tunnelTarget = null;
         cleanup(ctx);
         ctx.close();
     }

@@ -20,29 +20,23 @@ public record ProxyTarget(
 
     private static final String SCHEME_HTTPS_PREFIX = ProtocolConstants.HTTPS + "://";
     private static final String SCHEME_HTTP_PREFIX = ProtocolConstants.HTTP + "://";
-    private static final String SCHEME_HTTPS_SINGLE_SLASH = ProtocolConstants.HTTPS + ":/";
-    private static final String SCHEME_HTTP_SINGLE_SLASH = ProtocolConstants.HTTP + ":/";
 
-    public static ProxyTarget parse(String rawPath, String rawQuery) {
-        if (rawPath == null || rawPath.isEmpty() || "/".equals(rawPath)) {
+    public static ProxyTarget parseForwardRequest(String rawTarget, String rawQuery) {
+        if (rawTarget == null || rawTarget.isBlank()) {
             throw new IllegalArgumentException(
-                    "Target URL is required, e.g. /https://api.github.com/user");
+                    "Absolute target URL is required (configure HTTP_PROXY / HTTPS_PROXY)");
         }
-        String rest = rawPath.startsWith("/") ? rawPath.substring(1) : rawPath;
-        String scheme = ProtocolConstants.HTTPS;
-
-        if (rest.regionMatches(true, 0, SCHEME_HTTPS_PREFIX, 0, SCHEME_HTTPS_PREFIX.length())) {
+        String scheme;
+        String rest;
+        if (rawTarget.regionMatches(true, 0, SCHEME_HTTPS_PREFIX, 0, SCHEME_HTTPS_PREFIX.length())) {
             scheme = ProtocolConstants.HTTPS;
-            rest = rest.substring(SCHEME_HTTPS_PREFIX.length());
-        } else if (rest.regionMatches(true, 0, SCHEME_HTTP_PREFIX, 0, SCHEME_HTTP_PREFIX.length())) {
+            rest = rawTarget.substring(SCHEME_HTTPS_PREFIX.length());
+        } else if (rawTarget.regionMatches(true, 0, SCHEME_HTTP_PREFIX, 0, SCHEME_HTTP_PREFIX.length())) {
             scheme = ProtocolConstants.HTTP;
-            rest = rest.substring(SCHEME_HTTP_PREFIX.length());
-        } else if (rest.regionMatches(true, 0, SCHEME_HTTPS_SINGLE_SLASH, 0, SCHEME_HTTPS_SINGLE_SLASH.length())) {
-            scheme = ProtocolConstants.HTTPS;
-            rest = rest.substring(SCHEME_HTTPS_SINGLE_SLASH.length());
-        } else if (rest.regionMatches(true, 0, SCHEME_HTTP_SINGLE_SLASH, 0, SCHEME_HTTP_SINGLE_SLASH.length())) {
-            scheme = ProtocolConstants.HTTP;
-            rest = rest.substring(SCHEME_HTTP_SINGLE_SLASH.length());
+            rest = rawTarget.substring(SCHEME_HTTP_PREFIX.length());
+        } else {
+            throw new IllegalArgumentException(
+                    "Absolute target URL is required (configure HTTP_PROXY / HTTPS_PROXY)");
         }
 
         if (rest.isEmpty() || rest.startsWith("/")) {
@@ -52,7 +46,37 @@ public record ProxyTarget(
         int slashIndex = rest.indexOf('/');
         String authority = slashIndex >= 0 ? rest.substring(0, slashIndex) : rest;
         String targetPath = slashIndex >= 0 ? rest.substring(slashIndex) : "/";
-        return parseAuthority(authority, scheme, targetPath, rawQuery, defaultPort(scheme), false);
+        return parseAuthority(authority, scheme, targetPath, rawQuery, defaultPort(scheme));
+    }
+
+    public static ProxyTarget forTunnelRequest(ProxyTarget tunnelTarget, String rawPath, String rawQuery) {
+        if (rawPath == null || rawPath.isEmpty()) {
+            return new ProxyTarget(
+                    tunnelTarget.scheme(),
+                    tunnelTarget.host(),
+                    tunnelTarget.port(),
+                    tunnelTarget.explicitPort(),
+                    "/",
+                    rawQuery);
+        }
+        if (rawPath.startsWith("/")) {
+            return new ProxyTarget(
+                    tunnelTarget.scheme(),
+                    tunnelTarget.host(),
+                    tunnelTarget.port(),
+                    tunnelTarget.explicitPort(),
+                    rawPath,
+                    rawQuery);
+        }
+        if (rawPath.regionMatches(true, 0, SCHEME_HTTPS_PREFIX, 0, SCHEME_HTTPS_PREFIX.length())
+                || rawPath.regionMatches(true, 0, SCHEME_HTTP_PREFIX, 0, SCHEME_HTTP_PREFIX.length())) {
+            ProxyTarget parsed = parseForwardRequest(rawPath, rawQuery);
+            if (!parsed.host().equals(tunnelTarget.host()) || parsed.port() != tunnelTarget.port()) {
+                throw new IllegalArgumentException("Request target does not match CONNECT tunnel host/port");
+            }
+            return parsed;
+        }
+        throw new IllegalArgumentException("Invalid request target inside HTTPS tunnel");
     }
 
     public static ProxyTarget fromUri(URI url) {
@@ -82,7 +106,7 @@ public record ProxyTarget(
         if (trimmed.contains("/") || trimmed.contains("?") || trimmed.contains("#")) {
             throw new IllegalArgumentException("CONNECT target must be authority-form (host:port)");
         }
-        return parseAuthority(trimmed, ProtocolConstants.HTTPS, "/", null, DEFAULT_HTTPS_PORT, true);
+        return parseAuthority(trimmed, ProtocolConstants.HTTPS, "/", null, DEFAULT_HTTPS_PORT);
     }
 
     private static ProxyTarget parseAuthority(
@@ -90,15 +114,13 @@ public record ProxyTarget(
             String scheme,
             String targetPath,
             String rawQuery,
-            int defaultPort,
-            boolean forceExplicitPort) {
+            int defaultPort) {
         if (authority.contains("@") || authority.isEmpty()) {
             throw new IllegalArgumentException("Invalid target host");
         }
 
         String host;
         int port;
-        boolean explicitPort;
         int colon = authority.lastIndexOf(':');
         if (colon > 0 && authority.indexOf(':') == colon) {
             host = authority.substring(0, colon).toLowerCase(Locale.ROOT);
@@ -110,16 +132,14 @@ public record ProxyTarget(
             if (port < MIN_PORT || port > MAX_PORT) {
                 throw new IllegalArgumentException("Invalid target port");
             }
-            explicitPort = true;
         } else if (colon >= 0) {
             throw new IllegalArgumentException("Invalid target host");
         } else {
             host = authority.toLowerCase(Locale.ROOT);
             port = defaultPort;
-            explicitPort = forceExplicitPort;
         }
 
-        return new ProxyTarget(scheme, host, port, explicitPort, targetPath, rawQuery);
+        return new ProxyTarget(scheme, host, port, port != defaultPort, targetPath, rawQuery);
     }
 
     public URI toUri(String effectiveRawQuery) {
@@ -133,27 +153,5 @@ public record ProxyTarget(
             sb.append('?').append(effectiveRawQuery);
         }
         return URI.create(sb.toString());
-    }
-
-    public String rewriteRedirectLocation(String proxyBaseUrl, String location) {
-        if (location == null || location.isBlank()) {
-            return location;
-        }
-        String base =
-                proxyBaseUrl.endsWith("/")
-                        ? proxyBaseUrl.substring(0, proxyBaseUrl.length() - 1)
-                        : proxyBaseUrl;
-        String lower = location.toLowerCase(Locale.ROOT);
-        if (lower.startsWith(SCHEME_HTTPS_PREFIX) || lower.startsWith(SCHEME_HTTP_PREFIX)) {
-            return base + "/" + location;
-        }
-        if (location.startsWith("//")) {
-            return base + "/" + scheme + ":" + location;
-        }
-        if (location.startsWith("/")) {
-            String authority = explicitPort ? host + ":" + port : host;
-            return base + "/" + scheme + "://" + authority + location;
-        }
-        return location;
     }
 }

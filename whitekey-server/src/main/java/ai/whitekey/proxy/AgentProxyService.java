@@ -136,13 +136,18 @@ public class AgentProxyService {
             EvaluationResult evaluationResult,
             ProxyResponse immediateError) {}
 
+    public ProxyTarget parseConnectTarget(String rawAuthority) {
+        ProxyTarget target = ProxyTarget.parseConnect(rawAuthority);
+        validator.host(target.host());
+        return target;
+    }
+
     public PreparedRequest prepareConnect(String rawAuthority, HttpHeaders requestHeaders) {
         ProxyTarget target;
         URI targetUri;
         HttpHeaders cleanHeaders;
         try {
-            target = ProxyTarget.parseConnect(rawAuthority);
-            validator.host(target.host());
+            target = parseConnectTarget(rawAuthority);
             targetUri = target.toUri(null);
             cleanHeaders = sanitizeRequestHeaders(requestHeaders);
         } catch (IllegalArgumentException error) {
@@ -186,26 +191,46 @@ public class AgentProxyService {
         return null;
     }
 
-    public PreparedRequest prepare(
+    public PreparedRequest prepareForward(
             String method,
-            String rawRequestPath,
+            String rawTarget,
             String rawQuery,
             HttpHeaders requestHeaders) {
-        ProxyTarget target;
-        URI targetUri;
-        HttpMethod httpMethod;
-        HttpHeaders cleanHeaders;
         try {
-            target = ProxyTarget.parse(rawRequestPath, rawQuery);
-            httpMethod = validator.method(method);
-            validator.host(target.host());
-            validator.path(target.path());
-            validator.query(rawQuery);
-            targetUri = target.toUri(rawQuery);
-            cleanHeaders = sanitizeRequestHeaders(requestHeaders);
+            return prepareTarget(ProxyTarget.parseForwardRequest(rawTarget, rawQuery), method, rawQuery, requestHeaders);
         } catch (IllegalArgumentException error) {
             return invalidRequest(error);
         }
+    }
+
+    public PreparedRequest prepareTunnelRequest(
+            ProxyTarget tunnelTarget,
+            String method,
+            String rawPath,
+            String rawQuery,
+            HttpHeaders requestHeaders) {
+        try {
+            return prepareTarget(
+                    ProxyTarget.forTunnelRequest(tunnelTarget, rawPath, rawQuery),
+                    method,
+                    rawQuery,
+                    requestHeaders);
+        } catch (IllegalArgumentException error) {
+            return invalidRequest(error);
+        }
+    }
+
+    private PreparedRequest prepareTarget(
+            ProxyTarget target,
+            String method,
+            String rawQuery,
+            HttpHeaders requestHeaders) {
+        HttpMethod httpMethod = validator.method(method);
+        validator.host(target.host());
+        validator.path(target.path());
+        validator.query(rawQuery);
+        URI targetUri = target.toUri(rawQuery);
+        HttpHeaders cleanHeaders = sanitizeRequestHeaders(requestHeaders);
 
         HeaderEvaluationResult headerEval = evaluationService.evaluateHeaders(httpMethod, targetUri, cleanHeaders);
         if (headerEval.needsBody()) {
@@ -234,7 +259,6 @@ public class AgentProxyService {
 
     public ProxyResponse handleWithBodyFile(
             PreparedRequest prep,
-            String proxyBaseUrl,
             Path tempBodyFile,
             CompletableFuture<Void> clientDisconnected) {
         EvaluationResult decision = evaluationService.evaluateWithBodyFile(
@@ -249,7 +273,7 @@ public class AgentProxyService {
                     (tempBodyFile == null || !Files.exists(tempBodyFile) || Files.size(tempBodyFile) == 0)
                             ? HttpRequest.BodyPublishers.noBody()
                             : HttpRequest.BodyPublishers.ofFile(tempBodyFile);
-            return forwardAuthorized(prep, decision, proxyBaseUrl, publisher, clientDisconnected);
+            return forwardAuthorized(prep, decision, publisher, clientDisconnected);
         } catch (IOException e) {
             return ProxyResponse.jsonError(HttpStatus.INTERNAL_SERVER_ERROR.value(), ERROR_BODY_READ, "Failed reading request body file");
         }
@@ -257,20 +281,18 @@ public class AgentProxyService {
 
     public ProxyResponse handleStream(
             PreparedRequest prep,
-            String proxyBaseUrl,
             InputStream bodyStream,
             CompletableFuture<Void> clientDisconnected) {
         HttpRequest.BodyPublisher publisher =
                 bodyStream == null
                         ? HttpRequest.BodyPublishers.noBody()
                         : HttpRequest.BodyPublishers.ofInputStream(() -> bodyStream);
-        return forwardAuthorized(prep, prep.evaluationResult(), proxyBaseUrl, publisher, clientDisconnected);
+        return forwardAuthorized(prep, prep.evaluationResult(), publisher, clientDisconnected);
     }
 
     private ProxyResponse forwardAuthorized(
             PreparedRequest prep,
             EvaluationResult decision,
-            String proxyBaseUrl,
             HttpRequest.BodyPublisher publisher,
             CompletableFuture<Void> clientDisconnected) {
         ProxyResponse authError = authorizeExecution(decision, clientDisconnected);
@@ -279,7 +301,6 @@ public class AgentProxyService {
         }
         return forwardUpstream(
                 decision.action().getId(),
-                proxyBaseUrl,
                 prep.target(),
                 prep.targetUri(),
                 prep.httpMethod().name(),
@@ -341,7 +362,6 @@ public class AgentProxyService {
 
     public ProxyResponse forwardUpstream(
             UUID actionId,
-            String proxyBaseUrl,
             ProxyTarget target,
             URI targetUri,
             String method,
@@ -372,7 +392,7 @@ public class AgentProxyService {
 
             return ProxyResponse.ofStream(
                     upstream.statusCode(),
-                    copyResponseHeaders(upstream, target, proxyBaseUrl),
+                    copyResponseHeaders(upstream),
                     upstream.body());
         } catch (SSLException sslError) {
             return upstreamFailure(actionId, ActionStatus.FAILED, HttpStatus.BAD_GATEWAY, ERROR_UPSTREAM_TLS_FAILED, "Upstream TLS handshake failed");
@@ -396,24 +416,14 @@ public class AgentProxyService {
         return ProxyResponse.jsonError(httpStatus.value(), errorCode, reason);
     }
 
-    private static Map<String, List<String>> copyResponseHeaders(
-            HttpResponse<InputStream> upstream,
-            ProxyTarget target,
-            String proxyBaseUrl) {
+    private static Map<String, List<String>> copyResponseHeaders(HttpResponse<InputStream> upstream) {
         Map<String, List<String>> responseHeaders = new LinkedHashMap<>();
-        boolean isRedirect = upstream.statusCode() >= HttpStatus.MULTIPLE_CHOICES.value()
-                && upstream.statusCode() < HttpStatus.BAD_REQUEST.value();
         for (Map.Entry<String, List<String>> header : upstream.headers().map().entrySet()) {
             String lower = header.getKey().toLowerCase(Locale.ROOT);
             if (HOP_BY_HOP_HEADERS.contains(lower) || lower.startsWith(":")) {
                 continue;
             }
-            List<String> values = isRedirect && HttpHeaderNames.LOCATION.contentEqualsIgnoreCase(lower)
-                    ? header.getValue().stream()
-                            .map(loc -> target.rewriteRedirectLocation(proxyBaseUrl, loc))
-                            .toList()
-                    : new ArrayList<>(header.getValue());
-            responseHeaders.put(header.getKey(), values);
+            responseHeaders.put(header.getKey(), new ArrayList<>(header.getValue()));
         }
         return responseHeaders;
     }
