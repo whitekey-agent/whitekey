@@ -21,7 +21,7 @@ docker compose up -d
 docker exec -it whitekey whitekey <command>
 ```
 
-- Persistent data (`whitekey.sqlite`, `whitekey_admin_token`, `whitekey_master.key`) is stored in `~/.local/share/whitekey` (override with `WHITEKEY_HOST_DATA_DIR`).
+- Persistent data (`whitekey.sqlite`, `whitekey_admin_token`, `whitekey_master.key`, `whitekey_ca.crt`, `whitekey_ca.key`) is stored in `~/.local/share/whitekey` (override with `WHITEKEY_HOST_DATA_DIR`).
 
 ### Option 2: Run Locally (Java 25+)
 
@@ -56,34 +56,32 @@ Set via environment variables or `.env`:
 | `DEFAULT_POLICY` | `DENY` | `DENY` | Fallback policy for unmatched requests (`DENY`, `ALLOW`, or `ASK`) |
 | `WHITEKEY_DATA_DIR` | `~/.local/share/whitekey` | `/root/.local/share/whitekey` | SQLite DB, token, and key directory |
 | `WHITEKEY_ADMIN_TOKEN` | auto-generated | auto-generated | Override admin bearer token |
+| `PROXY_CA_CERT_FILE` | `whitekey_ca.crt` | `whitekey_ca.crt` | Proxy Root CA certificate filename inside `WHITEKEY_DATA_DIR` |
+| `PROXY_CA_KEY_FILE` | `whitekey_ca.key` | `whitekey_ca.key` | Proxy Root CA private key filename inside `WHITEKEY_DATA_DIR` |
+| `PROXY_TLS_PASSTHROUGH_HOSTS` | — | — | Comma-separated hosts (supports `*.domain`) to tunnel raw TCP without TLS inspection |
 
 ---
 
 ## Using the Proxy
 
-### URL-Prefix Mode (Credential Injection + Full L7 Policy Inspection)
+WhiteKey runs as a standard `HTTP_PROXY` / `HTTPS_PROXY` with automatic local-CA TLS termination, giving every HTTP client, CLI, and SDK full L7 policy inspection, human approvals, and credential injection over normal `http://` and `https://` URLs.
 
-Prefix target URLs with the WhiteKey proxy address:
-
-```bash
-curl http://127.0.0.1:9999/https://api.github.com/user
-```
-
-For AI SDKs (e.g., OpenAI / Anthropic), point `base_url` to the proxy with a dummy key:
-
-```text
-http://127.0.0.1:9999/https://api.openai.com/v1
-```
-
-*(In Docker on `whitekey-sandbox`, replace `127.0.0.1` with `whitekey`.)*
-
-### `CONNECT` Tunnel Mode
-
-Use WhiteKey as an `HTTPS_PROXY` for raw TCP tunneling (evaluated against `CONNECT` rules; no credential injection or body inspection):
+On startup, WhiteKey generates `whitekey_ca.crt` in `WHITEKEY_DATA_DIR` and serves it at `GET http://127.0.0.1:1111/ca.crt`. Configure your agent environment to route traffic through WhiteKey and trust its CA certificate:
 
 ```bash
-HTTPS_PROXY=http://127.0.0.1:9999 curl https://example.com
+export HTTP_PROXY=http://127.0.0.1:9999
+export HTTPS_PROXY=http://127.0.0.1:9999
+export SSL_CERT_FILE=~/.local/share/whitekey/whitekey_ca.crt
+export NODE_EXTRA_CA_CERTS=~/.local/share/whitekey/whitekey_ca.crt
+export REQUESTS_CA_BUNDLE=~/.local/share/whitekey/whitekey_ca.crt
+export GIT_SSL_CAINFO=~/.local/share/whitekey/whitekey_ca.crt
+
+curl https://api.github.com/user
 ```
+
+*(In Docker on `whitekey-sandbox`, replace `127.0.0.1` with `whitekey` and mount `~/.local/share/whitekey/whitekey_ca.crt` read-only into the sandbox container.)*
+
+For rare hosts that enforce strict certificate pinning, add them to `PROXY_TLS_PASSTHROUGH_HOSTS` (e.g. `PROXY_TLS_PASSTHROUGH_HOSTS=pinned.example.com`). Passthrough hosts are evaluated against `CONNECT` rules as raw TCP tunnels without TLS inspection or credential injection.
 
 ---
 

@@ -31,8 +31,13 @@ public class AgentProxyServer implements SmartLifecycle {
 
     private static final Logger log = LoggerFactory.getLogger(AgentProxyServer.class);
 
+    static final String CODEC_HANDLER = "http-codec";
+    static final String EXPECT_CONTINUE_HANDLER = "expect-continue";
+    static final String INBOUND_HANDLER = "proxy-inbound";
+
     private final ProxyProperties properties;
     private final AgentProxyService proxyService;
+    private final ProxyCertificateAuthority certificateAuthority;
     private final ApplicationContext applicationContext;
 
     private volatile Channel serverChannel;
@@ -41,9 +46,14 @@ public class AgentProxyServer implements SmartLifecycle {
     private volatile ExecutorService virtualExecutor;
     private volatile boolean running = false;
 
-    public AgentProxyServer(ProxyProperties properties, AgentProxyService proxyService, ApplicationContext applicationContext) {
+    public AgentProxyServer(
+            ProxyProperties properties,
+            AgentProxyService proxyService,
+            ProxyCertificateAuthority certificateAuthority,
+            ApplicationContext applicationContext) {
         this.properties = properties;
         this.proxyService = proxyService;
+        this.certificateAuthority = certificateAuthority;
         this.applicationContext = applicationContext;
     }
 
@@ -72,16 +82,16 @@ public class AgentProxyServer implements SmartLifecycle {
                                         @Override
                                         protected void initChannel(SocketChannel ch) {
                                             ch.pipeline()
-                                                    .addLast(new HttpServerCodec(
+                                                    .addLast(CODEC_HANDLER, new HttpServerCodec(
                                                             (int) properties.maxInitialLineLength().toBytes(),
                                                             (int) properties.maxHeaderSize().toBytes(),
                                                             (int) properties.maxChunkSize().toBytes()))
-                                                    .addLast(new HttpServerExpectContinueHandler())
-                                                    .addLast(new ProxyInboundHandler(
+                                                    .addLast(EXPECT_CONTINUE_HANDLER, new HttpServerExpectContinueHandler())
+                                                    .addLast(INBOUND_HANDLER, new ProxyInboundHandler(
                                                             proxyService,
+                                                            certificateAuthority,
                                                             virtualExecutor,
-                                                            properties,
-                                                            getBoundPort()));
+                                                            properties));
                                         }
                                     });
 
