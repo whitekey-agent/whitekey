@@ -142,12 +142,10 @@ public class AgentProxyService {
         return target;
     }
 
-    public PreparedRequest prepareConnect(String rawAuthority, HttpHeaders requestHeaders) {
-        ProxyTarget target;
+    public PreparedRequest prepareConnect(ProxyTarget target, HttpHeaders requestHeaders) {
         URI targetUri;
         HttpHeaders cleanHeaders;
         try {
-            target = parseConnectTarget(rawAuthority);
             targetUri = target.toUri(null);
             cleanHeaders = sanitizeRequestHeaders(requestHeaders);
         } catch (IllegalArgumentException error) {

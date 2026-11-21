@@ -50,22 +50,14 @@ public record ProxyTarget(
     }
 
     public static ProxyTarget forTunnelRequest(ProxyTarget tunnelTarget, String rawPath, String rawQuery) {
-        if (rawPath == null || rawPath.isEmpty()) {
+        if (rawPath == null || rawPath.isEmpty() || rawPath.startsWith("/")) {
+            String path = (rawPath == null || rawPath.isEmpty()) ? "/" : rawPath;
             return new ProxyTarget(
                     tunnelTarget.scheme(),
                     tunnelTarget.host(),
                     tunnelTarget.port(),
                     tunnelTarget.explicitPort(),
-                    "/",
-                    rawQuery);
-        }
-        if (rawPath.startsWith("/")) {
-            return new ProxyTarget(
-                    tunnelTarget.scheme(),
-                    tunnelTarget.host(),
-                    tunnelTarget.port(),
-                    tunnelTarget.explicitPort(),
-                    rawPath,
+                    path,
                     rawQuery);
         }
         if (rawPath.regionMatches(true, 0, SCHEME_HTTPS_PREFIX, 0, SCHEME_HTTPS_PREFIX.length())
