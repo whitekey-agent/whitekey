@@ -198,7 +198,7 @@ class ProxyInboundHandler extends SimpleChannelInboundHandler<HttpObject> {
             return;
         }
         if (properties.isTlsPassthroughHost(target.host())) {
-            handlePassthroughConnect(ctx, rawUri, requestHeaders);
+            handlePassthroughConnect(ctx, target, requestHeaders);
             return;
         }
         startTlsMitm(ctx, target);
@@ -230,11 +230,7 @@ class ProxyInboundHandler extends SimpleChannelInboundHandler<HttpObject> {
             cleanup(ctx);
             return;
         }
-        DefaultFullHttpResponse established =
-                new DefaultFullHttpResponse(
-                        HttpVersion.HTTP_1_1,
-                        new HttpResponseStatus(200, "Connection Established"));
-        ctx.writeAndFlush(established).addListener((ChannelFuture writeFuture) -> {
+        ctx.writeAndFlush(connectionEstablishedResponse()).addListener((ChannelFuture writeFuture) -> {
             if (!writeFuture.isSuccess() || !ctx.channel().isActive()) {
                 cleanup(ctx);
                 ctx.close();
@@ -245,19 +241,22 @@ class ProxyInboundHandler extends SimpleChannelInboundHandler<HttpObject> {
             pipeline.replace(
                     AgentProxyServer.CODEC_HANDLER,
                     AgentProxyServer.CODEC_HANDLER,
-                    new HttpServerCodec(
-                            (int) properties.maxInitialLineLength().toBytes(),
-                            (int) properties.maxHeaderSize().toBytes(),
-                            (int) properties.maxChunkSize().toBytes()));
+                    AgentProxyServer.newHttpServerCodec(properties));
             tunnelTarget = target;
             cleanup(ctx);
             ctx.channel().config().setAutoRead(true);
         });
     }
 
+    private static DefaultFullHttpResponse connectionEstablishedResponse() {
+        return new DefaultFullHttpResponse(
+                HttpVersion.HTTP_1_1,
+                new HttpResponseStatus(200, "Connection Established"));
+    }
+
     private void handlePassthroughConnect(
-            ChannelHandlerContext ctx, String rawUri, HttpHeaders requestHeaders) {
-        preparedRequest = proxyService.prepareConnect(rawUri, requestHeaders);
+            ChannelHandlerContext ctx, ProxyTarget target, HttpHeaders requestHeaders) {
+        preparedRequest = proxyService.prepareConnect(target, requestHeaders);
         if (preparedRequest.immediateError() != null) {
             failAndDiscard(ctx, currentMethod, preparedRequest.immediateError());
             return;
@@ -281,7 +280,6 @@ class ProxyInboundHandler extends SimpleChannelInboundHandler<HttpObject> {
                         sendResponseFromVirtualThread(ctx, method, error, false);
                         return;
                     }
-                    ProxyTarget target = prep.target();
                     ctx.executor().execute(() -> openConnectTunnel(ctx, target.host(), target.port()));
                 });
     }
@@ -330,11 +328,7 @@ class ProxyInboundHandler extends SimpleChannelInboundHandler<HttpObject> {
                     removeCloseListener(ctx);
 
                     ctx.channel().config().setAutoRead(false);
-                    DefaultFullHttpResponse established =
-                            new DefaultFullHttpResponse(
-                                    HttpVersion.HTTP_1_1,
-                                    new HttpResponseStatus(200, "Connection Established"));
-                    ctx.writeAndFlush(established).addListener(
+                    ctx.writeAndFlush(connectionEstablishedResponse()).addListener(
                             (ChannelFuture writeFuture) -> {
                                 if (!writeFuture.isSuccess() || !outbound.isActive() || !ctx.channel().isActive()) {
                                     outbound.close();

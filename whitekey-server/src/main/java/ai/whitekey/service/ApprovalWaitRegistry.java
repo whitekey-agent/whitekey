@@ -34,7 +34,7 @@ public class ApprovalWaitRegistry {
                 });
     }
 
-    private static void runAfterCommit(Runnable action) {
+    static void runAfterCommit(Runnable action) {
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(
                     new TransactionSynchronization() {

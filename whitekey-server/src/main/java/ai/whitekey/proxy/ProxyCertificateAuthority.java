@@ -148,10 +148,6 @@ public class ProxyCertificateAuthority {
         return caCertificatePem;
     }
 
-    public Path getCaCertificatePath() {
-        return caCertPath;
-    }
-
     private void loadExistingCa() throws GeneralSecurityException, IOException {
         try (InputStream in = Files.newInputStream(caCertPath)) {
             CertificateFactory factory = CertificateFactory.getInstance("X.509");
@@ -195,8 +191,7 @@ public class ProxyCertificateAuthority {
                 Extension.authorityKeyIdentifier, false, extUtils.createAuthorityKeyIdentifier(caKeyPair.getPublic()));
 
         this.caPrivateKey = caKeyPair.getPrivate();
-        ContentSigner signer = buildSigner(this.caPrivateKey);
-        this.caCertificate = new JcaX509CertificateConverter().getCertificate(builder.build(signer));
+        this.caCertificate = signCertificate(builder, this.caPrivateKey);
 
         try {
             persistFile(caCertPath, toPem(this.caCertificate), "rw-r--r--");
@@ -241,8 +236,7 @@ public class ProxyCertificateAuthority {
             builder.addExtension(
                     Extension.authorityKeyIdentifier, false, extUtils.createAuthorityKeyIdentifier(caCertificate));
 
-            ContentSigner signer = buildSigner(caPrivateKey);
-            X509Certificate leafCert = new JcaX509CertificateConverter().getCertificate(builder.build(signer));
+            X509Certificate leafCert = signCertificate(builder, caPrivateKey);
 
             SslContext sslContext = SslContextBuilder.forServer(leafKeyPair.getPrivate(), leafCert, caCertificate)
                     .protocols("TLSv1.3", "TLSv1.2")
@@ -268,11 +262,14 @@ public class ProxyCertificateAuthority {
         return new BigInteger(127, secureRandom).add(BigInteger.ONE);
     }
 
-    private static ContentSigner buildSigner(PrivateKey key) throws OperatorCreationException {
-        String signatureAlgorithm = "RSA".equalsIgnoreCase(key.getAlgorithm())
+    private static X509Certificate signCertificate(
+            JcaX509v3CertificateBuilder builder, PrivateKey signingKey)
+            throws GeneralSecurityException, OperatorCreationException {
+        String signatureAlgorithm = "RSA".equalsIgnoreCase(signingKey.getAlgorithm())
                 ? "SHA256withRSA"
                 : "SHA256withECDSA";
-        return new JcaContentSignerBuilder(signatureAlgorithm).build(key);
+        ContentSigner signer = new JcaContentSignerBuilder(signatureAlgorithm).build(signingKey);
+        return new JcaX509CertificateConverter().getCertificate(builder.build(signer));
     }
 
     private static void persistFile(Path path, String content, String posixPerms) throws IOException {

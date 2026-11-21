@@ -1,8 +1,5 @@
 package ai.whitekey.service;
 
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
-
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
@@ -29,17 +26,7 @@ final class TransactionalListCache<T> {
     }
 
     void invalidateAfterCommit() {
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(
-                    new TransactionSynchronization() {
-                        @Override
-                        public void afterCommit() {
-                            invalidateNow();
-                        }
-                    });
-        } else {
-            invalidateNow();
-        }
+        ApprovalWaitRegistry.runAfterCommit(this::invalidateNow);
     }
 
     void invalidateNow() {

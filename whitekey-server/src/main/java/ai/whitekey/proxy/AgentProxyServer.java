@@ -82,10 +82,7 @@ public class AgentProxyServer implements SmartLifecycle {
                                         @Override
                                         protected void initChannel(SocketChannel ch) {
                                             ch.pipeline()
-                                                    .addLast(CODEC_HANDLER, new HttpServerCodec(
-                                                            (int) properties.maxInitialLineLength().toBytes(),
-                                                            (int) properties.maxHeaderSize().toBytes(),
-                                                            (int) properties.maxChunkSize().toBytes()))
+                                                    .addLast(CODEC_HANDLER, newHttpServerCodec(properties))
                                                     .addLast(EXPECT_CONTINUE_HANDLER, new HttpServerExpectContinueHandler())
                                                     .addLast(INBOUND_HANDLER, new ProxyInboundHandler(
                                                             proxyService,
@@ -149,5 +146,12 @@ public class AgentProxyServer implements SmartLifecycle {
         return current != null && current.localAddress() instanceof InetSocketAddress addr
                 ? addr.getPort()
                 : -1;
+    }
+
+    static HttpServerCodec newHttpServerCodec(ProxyProperties properties) {
+        return new HttpServerCodec(
+                (int) properties.maxInitialLineLength().toBytes(),
+                (int) properties.maxHeaderSize().toBytes(),
+                (int) properties.maxChunkSize().toBytes());
     }
 }

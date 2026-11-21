@@ -28,6 +28,7 @@
 		<picocli.version>4.7.6</picocli.version>
 		<sqlite-jdbc.version>3.53.4.0</sqlite-jdbc.version>
 		<cel.version>0.15.0</cel.version>
+		<bouncycastle.version>1.84</bouncycastle.version>
 	</properties>
 
 </project>
