@@ -1,6 +1,7 @@
 package ai.whitekey.proxy;
 
 import ai.whitekey.config.ProxyProperties;
+import ai.whitekey.service.SecretFileLoader;
 import io.netty.handler.ssl.ApplicationProtocolConfig;
 import io.netty.handler.ssl.ApplicationProtocolNames;
 import io.netty.handler.ssl.SslContext;
@@ -36,10 +37,8 @@ import java.io.InputStream;
 import java.io.StringWriter;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.PosixFilePermissions;
 import java.security.GeneralSecurityException;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -50,6 +49,7 @@ import java.security.cert.X509Certificate;
 import java.security.spec.ECGenParameterSpec;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.Locale;
 import java.util.Map;
@@ -67,7 +67,7 @@ public class ProxyCertificateAuthority {
     private static final Duration LEAF_VALIDITY = Duration.ofDays(30);
     private static final Duration LEAF_RENEW_WINDOW = Duration.ofDays(1);
     private static final Duration BACKDATE_SKEW = Duration.ofDays(1);
-    private static final String POSIX_VIEW = "posix";
+    private static final int MAX_CACHED_SSL_CONTEXTS = 512;
 
     private record CachedSslContext(SslContext sslContext, Instant expiresAt) {}
 
@@ -82,7 +82,7 @@ public class ProxyCertificateAuthority {
 
     public ProxyCertificateAuthority(
             ProxyProperties properties,
-            @Value("${app.database.directory:${user.home}/.local/share/whitekey}") String dataDir) {
+            @Value(SecretFileLoader.DEFAULT_DATA_DIR_EXPRESSION) String dataDir) {
         Path baseDir = Path.of(dataDir);
         this.caCertPath = baseDir.resolve(properties.caCertFile());
         this.caKeyPath = baseDir.resolve(properties.caKeyFile());
@@ -103,7 +103,7 @@ public class ProxyCertificateAuthority {
                         Files.createDirectories(caCertPath.getParent());
                     }
                     Files.move(legacyCertPath, caCertPath);
-                    setPosixPermissions(caCertPath, "rw-r--r--");
+                    SecretFileLoader.setPosixPermissions(caCertPath, SecretFileLoader.PUBLIC_READ_PERMISSIONS);
                     certExists = true;
                     log.info("Migrated WhiteKey Proxy Root CA certificate from {} to {}", legacyCertPath, caCertPath);
                 }
@@ -141,7 +141,24 @@ public class ProxyCertificateAuthority {
             }
             return createLeafSslContext(key);
         });
+        if (sslContexts.size() > MAX_CACHED_SSL_CONTEXTS) {
+            evictContexts(normalized, renewThreshold);
+        }
         return updated.sslContext();
+    }
+
+    private void evictContexts(String keepHost, Instant renewThreshold) {
+        sslContexts.entrySet().removeIf(entry -> !entry.getValue().expiresAt().isAfter(renewThreshold));
+        int excess = sslContexts.size() - MAX_CACHED_SSL_CONTEXTS;
+        if (excess > 0) {
+            sslContexts.entrySet().stream()
+                    .filter(entry -> !entry.getKey().equals(keepHost))
+                    .sorted(Comparator.comparing(entry -> entry.getValue().expiresAt()))
+                    .limit(excess)
+                    .map(Map.Entry::getKey)
+                    .toList()
+                    .forEach(sslContexts::remove);
+        }
     }
 
     public String getCaCertificatePem() {
@@ -194,8 +211,12 @@ public class ProxyCertificateAuthority {
         this.caCertificate = signCertificate(builder, this.caPrivateKey);
 
         try {
-            persistFile(caCertPath, toPem(this.caCertificate), "rw-r--r--");
-            persistFile(caKeyPath, toPem(new JcaPKCS8Generator(this.caPrivateKey, null).generate()), "rw-------");
+            SecretFileLoader.writeFile(
+                    caCertPath, toPem(this.caCertificate), SecretFileLoader.PUBLIC_READ_PERMISSIONS);
+            SecretFileLoader.writeFile(
+                    caKeyPath,
+                    toPem(new JcaPKCS8Generator(this.caPrivateKey, null).generate()),
+                    SecretFileLoader.OWNER_READ_WRITE_PERMISSIONS);
             log.info("Generated WhiteKey Proxy Root CA certificate at: {}", caCertPath);
         } catch (IOException e) {
             log.warn("Using temporary in-memory Proxy Root CA (failed writing to {}): {}", caCertPath, e.getMessage());
@@ -270,23 +291,6 @@ public class ProxyCertificateAuthority {
                 : "SHA256withECDSA";
         ContentSigner signer = new JcaContentSignerBuilder(signatureAlgorithm).build(signingKey);
         return new JcaX509CertificateConverter().getCertificate(builder.build(signer));
-    }
-
-    private static void persistFile(Path path, String content, String posixPerms) throws IOException {
-        if (path.getParent() != null) {
-            Files.createDirectories(path.getParent());
-        }
-        Files.writeString(path, content, StandardCharsets.UTF_8);
-        setPosixPermissions(path, posixPerms);
-    }
-
-    private static void setPosixPermissions(Path path, String posixPerms) {
-        if (FileSystems.getDefault().supportedFileAttributeViews().contains(POSIX_VIEW)) {
-            try {
-                Files.setPosixFilePermissions(path, PosixFilePermissions.fromString(posixPerms));
-            } catch (Exception ignored) {
-            }
-        }
     }
 
     private static String toPem(Object obj) throws IOException {

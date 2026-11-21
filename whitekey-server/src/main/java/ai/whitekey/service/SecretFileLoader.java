@@ -10,11 +10,12 @@ import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.util.function.Supplier;
 
-final class SecretFileLoader {
+public final class SecretFileLoader {
 
-    static final String DEFAULT_DATA_DIR_EXPRESSION = "${app.database.directory:${user.home}/.local/share/whitekey}";
+    public static final String DEFAULT_DATA_DIR_EXPRESSION = "${app.database.directory:${user.home}/.local/share/whitekey}";
+    public static final String OWNER_READ_WRITE_PERMISSIONS = "rw-------";
+    public static final String PUBLIC_READ_PERMISSIONS = "rw-r--r--";
     private static final String POSIX_VIEW = "posix";
-    private static final String OWNER_READ_WRITE_PERMISSIONS = "rw-------";
 
     record LoadedSecret(String value, boolean generated, boolean temporary) {}
 
@@ -40,18 +41,7 @@ final class SecretFileLoader {
             }
 
             generated = generator.get();
-            if (filePath.getParent() != null) {
-                Files.createDirectories(filePath.getParent());
-            }
-            Files.writeString(filePath, generated, StandardCharsets.UTF_8);
-
-            if (FileSystems.getDefault().supportedFileAttributeViews().contains(POSIX_VIEW)) {
-                try {
-                    Files.setPosixFilePermissions(
-                            filePath, PosixFilePermissions.fromString(OWNER_READ_WRITE_PERMISSIONS));
-                } catch (Exception ignored) {
-                }
-            }
+            writeFile(filePath, generated, OWNER_READ_WRITE_PERMISSIONS);
 
             log.info("Generated new {} and saved to: {}", label, filePath);
             return new LoadedSecret(generated, true, false);
@@ -61,6 +51,25 @@ final class SecretFileLoader {
                 generated = generator.get();
             }
             return new LoadedSecret(generated, true, true);
+        }
+    }
+
+    public static void writeFile(Path path, String content, String posixPerms) throws IOException {
+        if (path.getParent() != null) {
+            Files.createDirectories(path.getParent());
+        }
+        Files.writeString(path, content, StandardCharsets.UTF_8);
+        setPosixPermissions(path, posixPerms);
+    }
+
+    public static void setPosixPermissions(Path path, String posixPerms) {
+        if (posixPerms != null
+                && !posixPerms.isBlank()
+                && FileSystems.getDefault().supportedFileAttributeViews().contains(POSIX_VIEW)) {
+            try {
+                Files.setPosixFilePermissions(path, PosixFilePermissions.fromString(posixPerms));
+            } catch (Exception ignored) {
+            }
         }
     }
 }

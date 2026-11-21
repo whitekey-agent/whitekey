@@ -1,6 +1,5 @@
 package ai.whitekey.controller;
 
-import ai.whitekey.exception.ApprovalConflictException;
 import ai.whitekey.exception.ConflictException;
 import ai.whitekey.exception.ResourceNotFoundException;
 
@@ -26,8 +25,8 @@ public class GlobalExceptionHandler {
                 .body(new ErrorResponse(ex.getMessage() != null ? ex.getMessage() : DEFAULT_NOT_FOUND_MESSAGE));
     }
 
-    @ExceptionHandler({ApprovalConflictException.class, ConflictException.class})
-    public ResponseEntity<ErrorResponse> conflict(RuntimeException exception) {
+    @ExceptionHandler(ConflictException.class)
+    public ResponseEntity<ErrorResponse> conflict(ConflictException exception) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(new ErrorResponse(exception.getMessage()));
     }

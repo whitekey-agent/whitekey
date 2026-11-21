@@ -4,7 +4,7 @@ import ai.whitekey.api.dto.ProtocolConstants;
 import ai.whitekey.entity.ActionEntity;
 import ai.whitekey.entity.ActionStatus;
 import ai.whitekey.entity.HttpActionEntity;
-import ai.whitekey.exception.ApprovalConflictException;
+import ai.whitekey.exception.ConflictException;
 import ai.whitekey.exception.ResourceNotFoundException;
 import ai.whitekey.policy.HttpPolicyValidator;
 import ai.whitekey.proxy.ProxyTarget;
@@ -137,7 +137,7 @@ public class ActionService {
         }
         ActionEntity action = getAction(id);
         if (action.getStatus() != ActionStatus.AWAITING_APPROVAL) {
-            throw new ApprovalConflictException(
+            throw new ConflictException(
                     "This action is no longer awaiting approval. Refresh and try again.");
         }
         ProtocolApprovalHandler<?> handler = protocolHandlers.stream()
@@ -148,7 +148,7 @@ public class ActionService {
             handler.validate(action, saveRule);
         }
         if (actionRepository.resolvePending(id, nextStatus) == 0) {
-            throw new ApprovalConflictException(
+            throw new ConflictException(
                     "This action is no longer awaiting approval. Refresh and try again.");
         }
         if (saveRule && handler != null) {
