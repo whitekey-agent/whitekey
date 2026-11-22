@@ -29,7 +29,7 @@ WhiteKey generates a local Root CA at `~/.local/share/whitekey/certs/whitekey_ca
 CA=~/.local/share/whitekey/certs/whitekey_ca.crt
 export http_proxy=http://127.0.0.1:9999 https_proxy=http://127.0.0.1:9999
 export HTTP_PROXY="$http_proxy" HTTPS_PROXY="$https_proxy"
-export no_proxy=127.0.0.1,localhost NO_PROXY="$no_proxy"
+export no_proxy=127.0.0.1,localhost NO_PROXY=127.0.0.1,localhost
 export SSL_CERT_FILE="$CA" NODE_EXTRA_CA_CERTS="$CA" REQUESTS_CA_BUNDLE="$CA" GIT_SSL_CAINFO="$CA"
 ```
 

@@ -23,14 +23,15 @@ import java.util.regex.Pattern;
 public final class HttpPolicyValidator {
     private static final int MAX_DNS_HOST_LENGTH = 253;
     private static final int HEX_RADIX = 16;
+    private static final int ASCII_PRINTABLE_MIN = 0x20;
+    private static final int ASCII_DEL = 0x7F;
     private static final int ASCII_BOUNDARY = 128;
 
     private static final Pattern IPV4_PATTERN = Pattern.compile("[0-9]+([.][0-9]+){3}");
     private static final Pattern DNS_LABEL_PATTERN = Pattern.compile("[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?");
     private static final Pattern HTTP_METHOD_PATTERN = Pattern.compile("[a-z0-9!#$%&'*+.^_`|~\\-]+");
     private static final Pattern ASCII_PATH_PATTERN = Pattern.compile("/[A-Za-z0-9%/_~!$&'()+,;=:@.\\-]*");
-    private static final Pattern HEX_BYTE_PATTERN = Pattern.compile("[0-9A-F]{2}");
-    private static final Pattern QUERY_HEX_BYTE_PATTERN = Pattern.compile("[0-9A-Fa-f]{2}");
+    private static final Pattern HEX_BYTE_PATTERN = Pattern.compile("[0-9A-Fa-f]{2}");
 
     private final CelBodyEvaluator bodyEvaluator;
 
@@ -227,13 +228,11 @@ public final class HttpPolicyValidator {
                     "Paths must be absolute ASCII paths; only a trailing /* wildcard is supported"
                             + " in rules");
         }
+        rejectDotSegments(path);
         if (path.contains("%")) {
-            decodePercentUtf8(path, HEX_BYTE_PATTERN, b -> b < ASCII_BOUNDARY, "path");
-        }
-        for (String segment : path.split("/", -1)) {
-            if (segment.equals(".") || segment.equals("..")) {
-                throw new IllegalArgumentException("Dot segments are not supported");
-            }
+            String decodedPath = decodePercentUtf8(
+                    path, HEX_BYTE_PATTERN, HttpPolicyValidator::isRejectedEncodedPathByte, "path");
+            rejectDotSegments(decodedPath);
         }
     }
 
@@ -241,7 +240,7 @@ public final class HttpPolicyValidator {
         if (input.indexOf('%') < 0) {
             return input;
         }
-        return decodePercentUtf8(input, QUERY_HEX_BYTE_PATTERN, HttpPolicyValidator::isUnreservedAscii, "query parameter");
+        return decodePercentUtf8(input, HEX_BYTE_PATTERN, HttpPolicyValidator::isUnreservedAscii, "query parameter");
     }
 
     private static String decodePercentUtf8(
@@ -278,10 +277,22 @@ public final class HttpPolicyValidator {
         }
     }
 
+    private static boolean isRejectedEncodedPathByte(int b) {
+        return b < ASCII_PRINTABLE_MIN || b == ASCII_DEL || b == '\\' || isUnreservedAscii(b);
+    }
+
+    private static void rejectDotSegments(String path) {
+        for (String segment : path.split("/", -1)) {
+            if (segment.equals(".") || segment.equals("..")) {
+                throw new IllegalArgumentException("Dot segments are not supported");
+            }
+        }
+    }
+
     private static boolean isUnreservedAscii(int b) {
         return (b >= 'A' && b <= 'Z')
                 || (b >= 'a' && b <= 'z')
                 || (b >= '0' && b <= '9')
-                || b == '-' || b == '.' || b == '_';
+                || b == '-' || b == '.' || b == '_' || b == '~';
     }
 }
