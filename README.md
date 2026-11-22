@@ -1,117 +1,68 @@
 # WhiteKey
 
-Egress policy engine, control plane, and credential broker for AI agents. WhiteKey enforces egress rules with a configurable default policy (`DENY`, `ALLOW`, or `ASK`), supports interactive human approval, and injects encrypted credentials on outbound requests so agents never see raw secrets.
-
----
+Egress policy proxy and credential broker for AI agents. Enforces HTTP/HTTPS allowlists, supports human-in-the-loop approval, and injects encrypted credentials on egress.
 
 ## Launch
 
-### Option 1: Docker Compose (Recommended for Sandbox Isolation)
+### Docker Compose
 
 ```bash
 docker compose up -d
-```
-
-*(Pass `--build` to build locally from source instead of pulling `whitekeyai/whitekey:latest`.)*
-
-- Proxy listens on `127.0.0.1:9999` on the host and `whitekey:9999` inside the isolated `whitekey-sandbox` network.
-- Admin API binds to `127.0.0.1:1111` inside the container; run CLI commands via:
-
-```bash
 docker exec -it whitekey whitekey <command>
 ```
 
-- Persistent data (`whitekey.sqlite`, `whitekey_admin_token`, `whitekey_master.key`, `certs/whitekey_ca.crt`, `whitekey_ca.key`) is stored in `~/.local/share/whitekey` (override with `WHITEKEY_HOST_DATA_DIR`).
+Proxy listens on `127.0.0.1:9999` on the host and `whitekey:9999` on `whitekey-sandbox`. Data persists in `~/.local/share/whitekey` (`WHITEKEY_HOST_DATA_DIR`).
 
-### Option 2: Run Locally (Java 25+)
+### Local (Java 25+)
 
 ```bash
 ./mvnw package -DskipTests
 java --enable-native-access=ALL-UNNAMED -jar whitekey-server/target/whitekey-server-*.jar
-```
-
-Run the CLI:
-
-```bash
 java --enable-native-access=ALL-UNNAMED -jar whitekey-cli/target/whitekey-cli-*.jar <command>
 ```
 
-Default endpoints and paths:
-- **Agent Proxy:** `http://127.0.0.1:9999` (`PROXY_ADDRESS`, `PROXY_PORT`, `PROXY_ENABLED`)
-- **Admin API:** `http://127.0.0.1:1111` (`BIND_ADDRESS`, `PORT`)
-- **Data Directory:** `~/.local/share/whitekey` (`WHITEKEY_DATA_DIR`)
+## Proxy Setup
 
-## Configuration
-
-Set via environment variables or `.env`:
-
-| Variable | Default (Local) | Default (Docker) | Description |
-| :--- | :--- | :--- | :--- |
-| `PORT` | `1111` | `1111` | Admin API port |
-| `BIND_ADDRESS` | `127.0.0.1` | `127.0.0.1` | Admin API bind address |
-| `PROXY_ENABLED` | `true` | `true` | Enable or disable the proxy server |
-| `PROXY_PORT` | `9999` | `9999` | Agent proxy port |
-| `PROXY_ADDRESS` | `127.0.0.1` | `0.0.0.0` | Agent proxy bind address |
-| `PROXY_HOST_BIND` | — | `127.0.0.1` | Host IP for Docker Compose port mapping |
-| `DEFAULT_POLICY` | `DENY` | `DENY` | Fallback policy for unmatched requests (`DENY`, `ALLOW`, or `ASK`) |
-| `WHITEKEY_DATA_DIR` | `~/.local/share/whitekey` | `/root/.local/share/whitekey` | SQLite DB, token, and key directory |
-| `WHITEKEY_ADMIN_TOKEN` | auto-generated | auto-generated | Override admin bearer token |
-| `PROXY_CA_CERT_FILE` | `certs/whitekey_ca.crt` | `certs/whitekey_ca.crt` | Proxy Root CA certificate path inside `WHITEKEY_DATA_DIR` |
-| `PROXY_CA_KEY_FILE` | `whitekey_ca.key` | `whitekey_ca.key` | Proxy Root CA private key filename inside `WHITEKEY_DATA_DIR` |
-| `PROXY_TLS_PASSTHROUGH_HOSTS` | — | — | Comma-separated hosts (supports `*.domain`) to tunnel raw TCP without TLS inspection |
-
----
-
-## Using the Proxy
-
-WhiteKey runs as a standard `HTTP_PROXY` / `HTTPS_PROXY` with automatic local-CA TLS termination, giving every HTTP client, CLI, and SDK full L7 policy inspection, human approvals, and credential injection over normal `http://` and `https://` URLs.
-
-On startup, WhiteKey generates `certs/whitekey_ca.crt` in `WHITEKEY_DATA_DIR` and serves it at `GET http://127.0.0.1:1111/ca.crt`. Configure your agent environment to route traffic through WhiteKey and trust its CA certificate:
+WhiteKey generates a local Root CA at `~/.local/share/whitekey/certs/whitekey_ca.crt` (also served at `GET http://127.0.0.1:1111/ca.crt`). Point your agent at the proxy and trust the CA:
 
 ```bash
-export http_proxy=http://127.0.0.1:9999
-export https_proxy=http://127.0.0.1:9999
-export HTTP_PROXY="$http_proxy"
-export HTTPS_PROXY="$https_proxy"
-export no_proxy=127.0.0.1,localhost
-export NO_PROXY="$no_proxy"
-export SSL_CERT_FILE=~/.local/share/whitekey/certs/whitekey_ca.crt
-export NODE_EXTRA_CA_CERTS=~/.local/share/whitekey/certs/whitekey_ca.crt
-export REQUESTS_CA_BUNDLE=~/.local/share/whitekey/certs/whitekey_ca.crt
-export GIT_SSL_CAINFO=~/.local/share/whitekey/certs/whitekey_ca.crt
-
-curl https://api.github.com/user
+CA=~/.local/share/whitekey/certs/whitekey_ca.crt
+export http_proxy=http://127.0.0.1:9999 https_proxy=http://127.0.0.1:9999
+export HTTP_PROXY="$http_proxy" HTTPS_PROXY="$https_proxy"
+export no_proxy=127.0.0.1,localhost NO_PROXY="$no_proxy"
+export SSL_CERT_FILE="$CA" NODE_EXTRA_CA_CERTS="$CA" REQUESTS_CA_BUNDLE="$CA" GIT_SSL_CAINFO="$CA"
 ```
 
-*(In Docker on `whitekey-sandbox`, replace `127.0.0.1` with `whitekey` and mount `~/.local/share/whitekey/certs` read-only into the sandbox container so no private keys or admin tokens are exposed.)*
+In Docker sandboxes on `whitekey-sandbox`, use `http://whitekey:9999` and mount `~/.local/share/whitekey/certs` read-only so private keys and tokens stay off the sandbox.
 
-For rare hosts that enforce strict certificate pinning, add them to `PROXY_TLS_PASSTHROUGH_HOSTS` (e.g. `PROXY_TLS_PASSTHROUGH_HOSTS=pinned.example.com`). Passthrough hosts are evaluated against `CONNECT` rules as raw TCP tunnels without TLS inspection or credential injection.
+## CLI
 
----
+Global flags: `whitekey [--server http://127.0.0.1:1111] [--token <token>] <command>` (also reads `WHITEKEY_SERVER_URL`, `WHITEKEY_ADMIN_TOKEN`, or `.env`). Run `whitekey <command> --help` for full options.
 
-## CLI Reference
-
-Global options (or set `WHITEKEY_SERVER_URL`, `WHITEKEY_ADMIN_TOKEN`, or `.env`):
+### Setup & Approvals
 
 ```bash
-whitekey [--server http://127.0.0.1:1111] [--token <admin-token>] <command>
+whitekey setup on --watch                     # Interactive approval loop; turns OFF on exit
+whitekey setup on
+whitekey setup off
+whitekey setup status
+
+whitekey approvals list
+whitekey approvals watch [--interval 300]
+whitekey approvals approve <uuid> [--save-rule]
+whitekey approvals reject <uuid>
 ```
 
-### Status
+### Rules
+
+Precedence: `DENY` > `ASK` > `ALLOW`; unmatched requests fall back to `DEFAULT_POLICY` (`DENY`). `--paths` defaults to `/*`.
 
 ```bash
-whitekey status
-```
-
-### Setup Mode (Discover & Approve Requests Interactively)
-
-Unmatched requests wait for human approval while setup mode is ON:
-
-```bash
-whitekey setup on --watch        # Turn ON, watch & approve/reject interactively, turn OFF on exit
-whitekey setup on                # Turn ON
-whitekey setup off               # Turn OFF and expire remaining unmatched pending actions
-whitekey setup status            # Check ON/OFF
+whitekey rules list
+whitekey rules add --name allow_github --effect ALLOW --hosts api.github.com
+whitekey rules add --name limit_stripe --effect ALLOW --methods POST --hosts api.stripe.com --paths /v1/charges --condition "amount <= 5000 && currency == 'usd'"
+whitekey rules add --name deny_admin --effect DENY --hosts api.example.com --paths "/admin/*"
+whitekey rules remove allow_github
 ```
 
 ### Credentials
@@ -121,46 +72,29 @@ Built-in presets: `github`, `stripe`, `slack`, `openai`, `anthropic`.
 ```bash
 whitekey credentials presets
 whitekey credentials list
-
-# Using a preset
 whitekey credentials add --name github-pat --preset github --secret ghp_...
-
-# Custom credential (HEADER, QUERY, or COOKIE)
 whitekey credentials add --name my-api --host api.example.com --type HEADER --key X-API-Key --format "%s" --secret sk_...
-
 whitekey credentials remove github-pat
 ```
 
-### Policy Rules
-
-Policy precedence: `DENY` > `ASK` > `ALLOW`. Unmatched requests follow `DEFAULT_POLICY` (`DENY` by default).
+### Status & History
 
 ```bash
-whitekey rules list
-
-# Allow all methods/paths on a host (--paths defaults to /*)
-whitekey rules add --name allow_github --effect ALLOW --hosts api.github.com
-
-# Restrict methods, paths, query params, headers, or JSON body (CEL expression)
-whitekey rules add --name limit_stripe --effect ALLOW --methods POST --hosts api.stripe.com --paths /v1/charges --condition "amount <= 5000 && currency == 'usd'"
-whitekey rules add --name ask_delete --effect ASK --methods DELETE --hosts api.github.com --paths "/*"
-whitekey rules add --name deny_admin --effect DENY --hosts api.example.com --paths "/admin/*"
-
-whitekey rules remove allow_github
-```
-
-### Approvals
-
-```bash
-whitekey approvals list
-whitekey approvals watch [--interval 300]
-whitekey approvals approve <action-uuid> [--save-rule]
-whitekey approvals reject <action-uuid>
-```
-
-### History
-
-```bash
+whitekey status
 whitekey history [--limit 20] [--status ALLOWED|DENIED|AWAITING_APPROVAL|EXPIRED|CANCELLED|FAILED] [--method GET] [--host api.github.com]
 whitekey history clear
 ```
+
+## Configuration
+
+Set via environment variables or `.env`:
+
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `PORT` / `PROXY_PORT` | `1111` / `9999` | Admin API and agent proxy ports |
+| `DEFAULT_POLICY` | `DENY` | Fallback for unmatched requests (`DENY`, `ALLOW`, `ASK`) |
+| `WHITEKEY_DATA_DIR` | `~/.local/share/whitekey` | SQLite DB, token, master key, and CA directory |
+| `WHITEKEY_ADMIN_TOKEN` | auto-generated | Admin bearer token override |
+| `PROXY_TLS_PASSTHROUGH_HOSTS` | — | Comma-separated hosts (`*.domain` supported) tunneled as raw TCP against `CONNECT` rules |
+
+See `whitekey-server/src/main/resources/application.yaml` and `docker-compose.yml` for bind address, timeout, and CA path overrides.
