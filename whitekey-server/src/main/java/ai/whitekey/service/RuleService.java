@@ -25,7 +25,7 @@ import java.util.regex.Pattern;
 
 @Service
 public class RuleService {
-    private static final Pattern RULE_NAME_PATTERN = Pattern.compile("[a-z0-9_]+");
+    private static final Pattern RULE_NAME_PATTERN = Pattern.compile("[a-z0-9_][a-z0-9_-]*");
 
     private final RuleRepository repository;
     private final HttpRuleRepository httpRuleRepository;
@@ -212,7 +212,7 @@ public class RuleService {
         String normalized = normalizeLookupName(rawName);
         if (!RULE_NAME_PATTERN.matcher(normalized).matches()) {
             throw new IllegalArgumentException(
-                    "Rule name must contain only lowercase letters, digits, or '_'");
+                    "Rule name must start with a lowercase letter, digit, or '_' and contain only lowercase letters, digits, '_', or '-'");
         }
         return normalized;
     }

@@ -65,7 +65,13 @@ public class CredentialService {
                 request.targetType(),
                 preset != null ? preset.targetType() : null,
                 HttpCredentialTargetType.HEADER.name());
-        HttpCredentialTargetType targetType = HttpCredentialTargetType.valueOf(rawType.toUpperCase(Locale.ROOT));
+        HttpCredentialTargetType targetType;
+        try {
+            targetType = HttpCredentialTargetType.valueOf(rawType.toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException(
+                    "Invalid credential target type: " + rawType + " (expected HEADER, QUERY, or COOKIE)");
+        }
         String targetKey = firstNonBlank(request.targetKey(), preset != null ? preset.targetKey() : null, HttpHeaders.AUTHORIZATION);
         String formatTemplate = firstNonBlank(request.formatTemplate(), preset != null ? preset.formatTemplate() : null, "%s");
         String name = requireNonBlank(request.name(), "Credential name is required");

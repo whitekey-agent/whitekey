@@ -41,9 +41,24 @@ public class RuleCommand extends BaseCommand {
                     String methods = formatList(http.methods());
                     String hosts = formatList(http.hosts());
                     String paths = formatList(http.paths());
-                    String cond = (http.bodyCondition() != null && !http.bodyCondition().isBlank()) ? " when " + http.bodyCondition() : "";
-                    System.out.printf("%s  %-5s %-10s %s%s%s%n",
-                            http.name(), effect, methods, hosts, paths.equals("*") ? "" : " " + paths, cond);
+                    StringBuilder details = new StringBuilder();
+                    if (!paths.equals("*")) {
+                        details.append(' ').append(paths);
+                    }
+                    if (http.ports() != null && !http.ports().isEmpty()) {
+                        details.append(" ports=").append(formatList(http.ports()));
+                    }
+                    if (http.queryParams() != null && !http.queryParams().isEmpty()) {
+                        details.append(" query=").append(formatMultiMap(http.queryParams()));
+                    }
+                    if (http.headers() != null && !http.headers().isEmpty()) {
+                        details.append(" headers=").append(formatMultiMap(http.headers()));
+                    }
+                    if (http.bodyCondition() != null && !http.bodyCondition().isBlank()) {
+                        details.append(" when ").append(http.bodyCondition());
+                    }
+                    System.out.printf("%s  %-5s %-10s %s%s%n",
+                            http.name(), effect, methods, hosts, details);
                 } else {
                     System.out.printf("%s  %-5s [%s]%n",
                             r.name(), r.effect() != null ? r.effect() : "-", r.type());
@@ -55,6 +70,14 @@ public class RuleCommand extends BaseCommand {
             return (items == null || items.isEmpty())
                     ? "*"
                     : items.stream().map(Object::toString).collect(Collectors.joining(","));
+        }
+
+        private static String formatMultiMap(Map<String, List<String>> map) {
+            return map.entrySet().stream()
+                    .map(entry -> entry.getValue() == null || entry.getValue().isEmpty()
+                            ? entry.getKey()
+                            : entry.getKey() + "=" + String.join(",", entry.getValue()))
+                    .collect(Collectors.joining(","));
         }
     }
 

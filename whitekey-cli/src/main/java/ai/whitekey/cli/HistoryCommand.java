@@ -35,14 +35,22 @@ public class HistoryCommand extends BaseCommand {
             return;
         }
 
+        int statusWidth = actions.stream()
+                .mapToInt(a -> a.status() != null ? a.status().length() : 1)
+                .max()
+                .orElse(7);
+        statusWidth = Math.max(7, statusWidth);
+        String httpRowFormat = "%s  %-" + statusWidth + "s %-6s %s%n";
+        String genericRowFormat = "%s  %-" + statusWidth + "s [%s]%n";
+
         for (Action action : actions) {
+            String actionStatus = action.status() != null ? action.status() : "-";
             if (action instanceof HttpAction ha) {
-                String actionStatus = ha.status() != null ? ha.status() : "-";
                 String actionMethod = ha.method() != null ? ha.method() : "-";
                 String target = (ha.host() != null ? ha.host() : "") + (ha.path() != null ? ha.path() : "");
-                System.out.printf("%s  %-7s %-6s %s%n", ha.id(), actionStatus, actionMethod, target.isEmpty() ? "-" : target);
+                System.out.printf(httpRowFormat, ha.id(), actionStatus, actionMethod, target.isEmpty() ? "-" : target);
             } else {
-                System.out.printf("%s  %-7s [%s]%n", action.id(), action.status() != null ? action.status() : "-", action.type());
+                System.out.printf(genericRowFormat, action.id(), actionStatus, action.type());
             }
         }
     }

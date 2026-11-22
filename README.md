@@ -16,7 +16,7 @@ Proxy listens on `127.0.0.1:9999` on the host and `whitekey:9999` on `whitekey-s
 ### Local (Java 25+)
 
 ```bash
-./mvnw package -DskipTests
+./mvnw clean package -DskipTests
 java --enable-native-access=ALL-UNNAMED -jar whitekey-server/target/whitekey-server-*.jar
 java --enable-native-access=ALL-UNNAMED -jar whitekey-cli/target/whitekey-cli-*.jar <command>
 ```
