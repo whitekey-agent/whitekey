@@ -47,6 +47,11 @@ final class ApprovalWatcher {
          * {@code null} if the user quits, or {@link PromptResult#stale()} if the action ceased to be pending.
          */
         PromptResult select(Action current) throws IOException;
+
+        /**
+         * Waits for the poll interval between idle queue checks. Returns {@code false} if the user quit.
+         */
+        boolean waitForNextPoll() throws IOException;
     }
 
     record PromptResult(Choice choice, boolean quit, boolean stale) {
@@ -114,7 +119,8 @@ final class ApprovalWatcher {
                     out.flush();
                     waitingMessageShown = true;
                 }
-                if (!sleepPollInterval()) {
+                if (!prompt.waitForNextPoll()) {
+                    clearLines(1);
                     return;
                 }
                 continue;
@@ -203,11 +209,26 @@ final class ApprovalWatcher {
                 || ex.statusCode() == HttpURLConnection.HTTP_NOT_FOUND;
     }
 
+    private static boolean isQuitKey(int ch) {
+        return ch == -1 || ch == 3 || ch == 'q' || ch == 'Q';
+    }
+
     private final class JLinePointerPrompt implements Prompt {
         private final Terminal terminal;
 
         JLinePointerPrompt(Terminal terminal) {
             this.terminal = terminal;
+        }
+
+        @Override
+        public boolean waitForNextPoll() throws IOException {
+            Attributes saved = terminal.enterRawMode();
+            try {
+                int ch = terminal.reader().read(pollIntervalMs);
+                return !isQuitKey(ch);
+            } finally {
+                terminal.setAttributes(saved);
+            }
         }
 
         @Override
@@ -226,7 +247,7 @@ final class ApprovalWatcher {
                         }
                         continue;
                     }
-                    if (ch == -1 || ch == 3 || ch == 'q' || ch == 'Q') {
+                    if (isQuitKey(ch)) {
                         clearLines(OPTIONS.length);
                         return PromptResult.quitSignal();
                     }
@@ -297,6 +318,11 @@ final class ApprovalWatcher {
 
         LinePrompt(BufferedReader reader) {
             this.reader = reader;
+        }
+
+        @Override
+        public boolean waitForNextPoll() {
+            return sleepPollInterval();
         }
 
         @Override

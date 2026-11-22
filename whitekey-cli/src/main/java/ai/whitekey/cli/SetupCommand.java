@@ -3,6 +3,8 @@ package ai.whitekey.cli;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+
 @Command(name = "setup", description = "Manage setup mode for discovering and approving new rules",
         subcommands = {
                 SetupCommand.StatusCommand.class,
@@ -35,11 +37,26 @@ public class SetupCommand extends BaseCommand {
             getApiClient().turnSetupOn();
             System.out.println("Setup Mode: ON");
             if (watch) {
+                AtomicBoolean turnedOff = new AtomicBoolean(false);
+                Runnable turnOffOnce = () -> {
+                    if (turnedOff.compareAndSet(false, true)) {
+                        try {
+                            getApiClient().turnSetupOff();
+                            System.out.println("Setup Mode: OFF");
+                        } catch (Exception ignored) {
+                        }
+                    }
+                };
+                Thread shutdownHook = new Thread(turnOffOnce, "whitekey-setup-off");
+                Runtime.getRuntime().addShutdownHook(shutdownHook);
                 try {
                     ApprovalWatcher.watch(getApiClient(), pollIntervalMs);
                 } finally {
-                    getApiClient().turnSetupOff();
-                    System.out.println("Setup Mode: OFF");
+                    turnOffOnce.run();
+                    try {
+                        Runtime.getRuntime().removeShutdownHook(shutdownHook);
+                    } catch (IllegalStateException ignored) {
+                    }
                 }
             }
         }
