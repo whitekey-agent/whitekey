@@ -115,11 +115,15 @@ public class CredentialInjectionService {
     }
 
     private URI injectQueryParam(URI uri, String key, String value) {
-        String encodedKey = UriUtils.encodeQueryParam(key, StandardCharsets.UTF_8);
-        String encodedValue = UriUtils.encodeQueryParam(value, StandardCharsets.UTF_8);
+        String encodedKey = encodeQueryParamComponent(key);
+        String encodedValue = encodeQueryParamComponent(value);
         return UriComponentsBuilder.fromUri(uri)
                 .replaceQueryParam(encodedKey, encodedValue)
                 .build(true)
                 .toUri();
+    }
+
+    private static String encodeQueryParamComponent(String component) {
+        return UriUtils.encodeQueryParam(component, StandardCharsets.UTF_8).replace("+", "%2B");
     }
 }

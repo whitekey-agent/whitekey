@@ -68,7 +68,11 @@ public final class CliConfigDefaults {
     }
 
     public static String resolveServerUrl(String explicitUrl) {
-        return firstNonBlank(explicitUrl, System.getenv(ENV_SERVER_URL), DEFAULT_SERVER_URL);
+        String url = firstNonBlank(explicitUrl, System.getenv(ENV_SERVER_URL), DEFAULT_SERVER_URL);
+        while (url.length() > 1 && url.endsWith("/")) {
+            url = url.substring(0, url.length() - 1);
+        }
+        return url;
     }
 
     public static String resolveAdminToken(String explicitToken) {
