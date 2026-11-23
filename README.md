@@ -11,7 +11,7 @@ docker compose up -d
 docker exec -it whitekey whitekey <command>
 ```
 
-Proxy listens on `127.0.0.1:9999` on the host and `whitekey:9999` on `whitekey-sandbox`. Data persists in `~/.local/share/whitekey` (`WHITEKEY_HOST_DATA_DIR`).
+Proxy listens on `127.0.0.1:9999` (`PROXY_HOST_BIND`, `PROXY_PORT`). Data persists in `~/.local/share/whitekey` (`WHITEKEY_HOST_DATA_DIR`).
 
 ### Local (Java 25+)
 
@@ -33,7 +33,7 @@ export no_proxy=127.0.0.1,localhost NO_PROXY=127.0.0.1,localhost
 export SSL_CERT_FILE="$CA" NODE_EXTRA_CA_CERTS="$CA" REQUESTS_CA_BUNDLE="$CA" GIT_SSL_CAINFO="$CA"
 ```
 
-In Docker sandboxes on `whitekey-sandbox`, use `http://whitekey:9999` and mount `~/.local/share/whitekey/certs` read-only so private keys and tokens stay off the sandbox.
+For isolated sandboxes (VMs or containers), expose only `~/.local/share/whitekey/certs` (or `GET /ca.crt`) so private keys and admin tokens stay off the sandbox.
 
 ## CLI
 
