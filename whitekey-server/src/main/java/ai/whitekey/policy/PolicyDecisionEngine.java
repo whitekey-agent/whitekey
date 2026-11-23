@@ -213,11 +213,12 @@ public final class PolicyDecisionEngine {
                 && rule.getPaths().stream().noneMatch(pattern -> matchesPath(pattern, req.path()))) {
             return false;
         }
-        return matchesQueryParams(rule.getQueryParams(), req.queryParams())
-                && matchesRuleHeaders(rule.getHeaders(), req.headers());
+        return matchesQueryParams(rule.getQueryParams(), req.queryParams(), rule.getEffect())
+                && matchesRuleHeaders(rule.getHeaders(), req.headers(), rule.getEffect());
     }
 
-    private static boolean matchesQueryParams(Map<String, List<String>> expected, Map<String, List<String>> actual) {
+    private static boolean matchesQueryParams(
+            Map<String, List<String>> expected, Map<String, List<String>> actual, RuleEffect effect) {
         if (expected == null || expected.isEmpty()) {
             return true;
         }
@@ -225,10 +226,11 @@ public final class PolicyDecisionEngine {
             return false;
         }
         return expected.entrySet().stream()
-                .allMatch(e -> matchesValues(e.getValue(), actual.get(e.getKey())));
+                .allMatch(e -> matchesValues(e.getValue(), actual.get(e.getKey()), effect));
     }
 
-    private static boolean matchesRuleHeaders(HttpHeaders expected, HttpHeaders actual) {
+    private static boolean matchesRuleHeaders(
+            HttpHeaders expected, HttpHeaders actual, RuleEffect effect) {
         if (expected == null || expected.isEmpty()) {
             return true;
         }
@@ -236,14 +238,21 @@ public final class PolicyDecisionEngine {
             return false;
         }
         return expected.headerNames().stream()
-                .allMatch(name -> matchesValues(expected.get(name), actual.get(name)));
+                .allMatch(name -> matchesValues(expected.get(name), actual.get(name), effect));
     }
 
-    private static boolean matchesValues(List<String> expectedValues, List<String> actualValues) {
-        return actualValues != null
-                && (expectedValues == null
-                        || expectedValues.isEmpty()
-                        || actualValues.stream().anyMatch(expectedValues::contains));
+    private static boolean matchesValues(
+            List<String> expectedValues, List<String> actualValues, RuleEffect effect) {
+        if (actualValues == null) {
+            return false;
+        }
+        if (expectedValues == null || expectedValues.isEmpty()) {
+            return true;
+        }
+        if (effect == RuleEffect.ALLOW) {
+            return !actualValues.isEmpty() && actualValues.stream().allMatch(expectedValues::contains);
+        }
+        return actualValues.stream().anyMatch(expectedValues::contains);
     }
 
     private static boolean matchesPath(String pattern, String path) {

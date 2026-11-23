@@ -34,8 +34,21 @@ public class WhiteKeyCli {
         public String defaultValue(CommandLine.Model.ArgSpec argSpec) throws Exception {
             String key = argSpec.descriptionKey();
             String envVal = (key != null && !key.isBlank()) ? System.getenv(key) : null;
-            String fileVal = fileProvider != null ? fileProvider.defaultValue(argSpec) : null;
+            String fileVal = fileProvider != null ? stripOptionalQuotes(fileProvider.defaultValue(argSpec)) : null;
             return CliConfigDefaults.firstNonBlank(envVal, fileVal);
+        }
+
+        private static String stripOptionalQuotes(String value) {
+            if (value == null) {
+                return null;
+            }
+            String trimmed = value.trim();
+            if (trimmed.length() >= 2
+                    && ((trimmed.startsWith("\"") && trimmed.endsWith("\""))
+                            || (trimmed.startsWith("'") && trimmed.endsWith("'")))) {
+                return trimmed.substring(1, trimmed.length() - 1);
+            }
+            return trimmed;
         }
     }
 }

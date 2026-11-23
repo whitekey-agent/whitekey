@@ -10,12 +10,14 @@ import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.IntPredicate;
 import java.util.regex.Pattern;
 
@@ -119,6 +121,7 @@ public final class HttpPolicyValidator {
             return Map.of();
         }
         Map<String, List<String>> params = new LinkedHashMap<>();
+        Set<String> valuelessKeys = new HashSet<>();
         for (String segment : rawQuery.split("&", -1)) {
             if (segment.isEmpty()) {
                 throw new IllegalArgumentException("Invalid empty query parameter");
@@ -129,15 +132,21 @@ public final class HttpPolicyValidator {
             if (key.isBlank()) {
                 throw new IllegalArgumentException("Query param name must not be blank");
             }
-            if (params.containsKey(key)) {
-                throw new IllegalArgumentException("Duplicate query parameter: " + key);
+            List<String> values = params.computeIfAbsent(key, ignored -> new ArrayList<>());
+            if (eq >= 0) {
+                if (valuelessKeys.remove(key)) {
+                    values.add("");
+                }
+                values.add(decodeQueryComponent(segment.substring(eq + 1)));
+            } else if (!values.isEmpty()) {
+                values.add("");
+            } else {
+                valuelessKeys.add(key);
             }
-            List<String> values = eq >= 0
-                    ? List.of(decodeQueryComponent(segment.substring(eq + 1)))
-                    : List.of();
-            params.put(key, values);
         }
-        return Collections.unmodifiableMap(params);
+        Map<String, List<String>> immutable = new LinkedHashMap<>();
+        params.forEach((k, v) -> immutable.put(k, List.copyOf(v)));
+        return Collections.unmodifiableMap(immutable);
     }
 
     public List<String> pathPatterns(List<String> input) {
@@ -240,7 +249,7 @@ public final class HttpPolicyValidator {
         if (input.indexOf('%') < 0) {
             return input;
         }
-        return decodePercentUtf8(input, HEX_BYTE_PATTERN, HttpPolicyValidator::isUnreservedAscii, "query parameter");
+        return decodePercentUtf8(input, HEX_BYTE_PATTERN, HttpPolicyValidator::isControlByte, "query parameter");
     }
 
     private static String decodePercentUtf8(
@@ -277,8 +286,12 @@ public final class HttpPolicyValidator {
         }
     }
 
+    private static boolean isControlByte(int b) {
+        return b < ASCII_PRINTABLE_MIN || b == ASCII_DEL;
+    }
+
     private static boolean isRejectedEncodedPathByte(int b) {
-        return b < ASCII_PRINTABLE_MIN || b == ASCII_DEL || b == '\\' || isUnreservedAscii(b);
+        return isControlByte(b) || b == '\\' || isUnreservedAscii(b);
     }
 
     private static void rejectDotSegments(String path) {
