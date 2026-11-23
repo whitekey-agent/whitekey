@@ -7,25 +7,25 @@ services:
     environment:
       PORT: ${PORT:-1111}
       BIND_ADDRESS: ${BIND_ADDRESS:-127.0.0.1}
+      DEFAULT_POLICY: ${DEFAULT_POLICY:-DENY}
+      WHITEKEY_ADMIN_TOKEN: ${WHITEKEY_ADMIN_TOKEN:-}
+      WHITEKEY_ADMIN_TOKEN_FILE: ${WHITEKEY_ADMIN_TOKEN_FILE:-whitekey_admin_token}
+      WHITEKEY_ADMIN_TOKEN_PREFIX: ${WHITEKEY_ADMIN_TOKEN_PREFIX:-whitekey_admin_token_}
+      WHITEKEY_ENCRYPTION_KEY: ${WHITEKEY_ENCRYPTION_KEY:-}
+      WHITEKEY_MASTER_KEY_FILE: ${WHITEKEY_MASTER_KEY_FILE:-whitekey_master.key}
+      WHITEKEY_MAX_AUDIT_BODY_BYTES: ${WHITEKEY_MAX_AUDIT_BODY_BYTES:-65536}
       PROXY_ENABLED: ${PROXY_ENABLED:-true}
       PROXY_PORT: ${PROXY_PORT:-9999}
       PROXY_ADDRESS: ${PROXY_ADDRESS:-0.0.0.0}
+      PROXY_CONNECT_TIMEOUT: ${PROXY_CONNECT_TIMEOUT:-15s}
+      PROXY_SHUTDOWN_TIMEOUT: ${PROXY_SHUTDOWN_TIMEOUT:-2s}
+      PROXY_MAX_INITIAL_LINE_LENGTH: ${PROXY_MAX_INITIAL_LINE_LENGTH:-8KB}
+      PROXY_MAX_HEADER_SIZE: ${PROXY_MAX_HEADER_SIZE:-32KB}
+      PROXY_MAX_CHUNK_SIZE: ${PROXY_MAX_CHUNK_SIZE:-16KB}
       PROXY_CA_CERT_FILE: ${PROXY_CA_CERT_FILE:-certs/whitekey_ca.crt}
       PROXY_CA_KEY_FILE: ${PROXY_CA_KEY_FILE:-whitekey_ca.key}
       PROXY_TLS_PASSTHROUGH_HOSTS: ${PROXY_TLS_PASSTHROUGH_HOSTS:-}
-      DEFAULT_POLICY: ${DEFAULT_POLICY:-DENY}
-      WHITEKEY_ADMIN_TOKEN: ${WHITEKEY_ADMIN_TOKEN:-}
     ports:
       - "${PROXY_HOST_BIND:-127.0.0.1}:${PROXY_PORT:-9999}:${PROXY_PORT:-9999}"
     volumes:
       - ${WHITEKEY_HOST_DATA_DIR:-~/.local/share/whitekey}:/root/.local/share/whitekey
-    networks:
-      - sandbox-internal
-      - proxy-uplink
-
-networks:
-  sandbox-internal:
-    name: ${WHITEKEY_SANDBOX_NETWORK:-whitekey-sandbox}
-    internal: true
-  proxy-uplink:
-    name: ${WHITEKEY_UPLINK_NETWORK:-whitekey-uplink}
